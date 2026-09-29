@@ -1,0 +1,20 @@
+.venv/
+dist/
+__pycache__/
+*.pyc
+.pytest_cache/
+.omo/
+.codegraph
+.DS_Store
+/tmp-install/
+.env*
+*.local
+.vscode/
+# carries a real API key for local MCP testing
+.opencode/opencode.json
+.claude/
+# screenshots and accessibility snapshots a browser QA run leaves behind
+.playwright-mcp/
+# internal planning evidence, private hosts and history stay out of the public repo
+docs/research/
+tests/sandbox/.env

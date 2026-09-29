@@ -1,0 +1,63 @@
+[project]
+name = "evolution-api-mcp"
+version = "1.0.0"
+description = "Operate one Evolution API (WhatsApp) instance from any MCP host: chats, history, sending, groups and configuration."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Persevida SL" }]
+keywords = ["mcp", "model-context-protocol", "evolution-api", "whatsapp", "claude", "chatgpt"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Communications :: Chat",
+]
+dependencies = ["mcp>=2.2.0,<3", "pydantic>=2.12", "httpx2>=2.5,<3", "httpcore2>=2.5,<3", "anyio>=4.9"]
+
+[project.optional-dependencies]
+remote = ["uvicorn>=0.31", "cryptography>=42"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pillow>=10", "ruff>=0.15"]
+
+[project.scripts]
+evolution-api-mcp = "evolution_api_mcp.server:main"
+evolution-api-mcp-remote = "evolution_api_mcp.remote.app:main"
+
+[project.urls]
+Homepage = "https://github.com/singleflo/evolution-api-mcp"
+Repository = "https://github.com/singleflo/evolution-api-mcp"
+Issues = "https://github.com/singleflo/evolution-api-mcp/issues"
+Changelog = "https://github.com/singleflo/evolution-api-mcp/blob/main/CHANGELOG.md"
+MCPRegistry = "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.singleflo%2Fevolution-api-mcp/versions"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/evolution_api_mcp"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/docs", "/.github", "/plugins", "/.claude-plugin", "/.agents", "/.claude", "/tests/sandbox"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "live: runs against a real Evolution instance (EVOLUTION_TEST_* variables)",
+  "wheel: runs the built wheel through uvx",
+  "remote_live: runs against the deployed hosted server",
+  "sandbox: runs against the local Docker Evolution sandbox (tests/sandbox)",
+]
+addopts = "-m 'not live and not wheel and not remote_live and not sandbox'"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC"]
