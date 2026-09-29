@@ -51,15 +51,48 @@ class ToolExecutionError(ToolError):
     """
 
 
+def _dumps(payload: object) -> str:
+    return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def _trim_longest_list(payload: dict) -> str | None:
+    """`payload` with its longest list cut to the items that fit, as valid JSON, or None when no cut fits.
+
+    Cutting the text mid-way would hand the model a broken document; dropping trailing items and saying how many
+    were kept keeps it parseable and tells it exactly what is missing.
+    """
+    candidates = [key for key, value in payload.items() if isinstance(value, list) and len(value) > 1]
+    if not candidates:
+        return None
+    key = max(candidates, key=lambda k: len(_dumps(payload[k])))
+    items: list = payload[key]
+
+    def render(kept: int) -> str:
+        notice = f"Showing {kept} of {len(items)} {key}; ask for fewer items (limit) or a narrower time range."
+        return _dumps({**payload, key: items[:kept], "truncated": notice})
+
+    low, high = 0, len(items) - 1
+    while low < high:  # largest count whose rendering still fits
+        middle = (low + high + 1) // 2
+        if len(render(middle)) <= MAX_RESULT_CHARS:
+            low = middle
+        else:
+            high = middle - 1
+    return render(low) if low > 0 and len(render(low)) <= MAX_RESULT_CHARS else None
+
+
 def tool_result(payload: object, *, notice: str = TRUNCATION_NOTICE) -> str:
     """Serialise `payload` as compact JSON and cap it at MAX_RESULT_CHARS.
 
-    A `str` passes through unchanged. When the cap bites, `notice` names the remedy the caller
-    can apply.
+    A `str` passes through unchanged. When the cap bites on a dict holding a list, the list is cut to the items
+    that fit and the result says how many were kept. Anything else is cut at the cap and `notice` names the remedy
+    the caller can apply.
     """
-    text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False, default=str)
+    text = payload if isinstance(payload, str) else _dumps(payload)
     if len(text) <= MAX_RESULT_CHARS:
         return text
+    if isinstance(payload, dict) and (trimmed := _trim_longest_list(payload)) is not None:
+        return trimmed
     return text[:MAX_RESULT_CHARS] + notice
 
 

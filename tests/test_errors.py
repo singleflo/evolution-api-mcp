@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -44,12 +45,23 @@ def test_tool_result_keeps_text_at_the_limit_and_cuts_beyond_it_with_the_notice(
     assert cut.endswith("ask for fewer items (limit) or a narrower time range.")
 
 
-def test_tool_result_cuts_serialised_payloads_and_accepts_a_custom_notice() -> None:
-    payload = {"rows": ["y" * 100] * 200}
+def test_tool_result_cuts_a_non_list_payload_with_the_custom_notice() -> None:
+    payload = {"text": "y" * 20_000}
     cut = tool_result(payload, notice="\n[cut: use a smaller limit]")
     assert len(cut) == MAX_RESULT_CHARS + len("\n[cut: use a smaller limit]")
     assert cut.endswith("\n[cut: use a smaller limit]")
-    assert cut.startswith('{"rows": ["yyy')
+    assert cut.startswith('{"text": "yyy')
+
+
+def test_tool_result_drops_trailing_list_items_and_stays_valid_json() -> None:
+    payload = {"rows": [f"row-{i:03d}-" + "y" * 100 for i in range(200)], "offset": 0}
+    cut = json.loads(tool_result(payload))
+    kept = len(cut["rows"])
+    assert 0 < kept < 200
+    assert cut["rows"] == payload["rows"][:kept]
+    assert cut["offset"] == 0
+    assert cut["truncated"] == (f"Showing {kept} of 200 rows; ask for fewer items (limit) or a narrower time range.")
+    assert len(tool_result(payload)) <= MAX_RESULT_CHARS
 
 
 @pytest.mark.anyio
