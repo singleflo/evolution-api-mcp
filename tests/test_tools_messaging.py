@@ -114,7 +114,7 @@ async def test_send_text_carries_quote_mentions_preview_and_explicit_delay(evo, 
             }
         },
         "mentioned": ["391110001111"],
-        "everyOne": True,
+        "mentionsEveryOne": True,
         "linkPreview": False,
     }
 

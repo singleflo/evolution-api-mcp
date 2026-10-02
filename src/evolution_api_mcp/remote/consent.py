@@ -92,6 +92,12 @@ class _FormState:
     error: str | None = None
 
 
+# Each verification spawns a child process and dials a host the caller chose, so the number running at once is
+# capped: an unauthenticated form must not be a cheap way to start processes or probe other servers.
+MAX_CONCURRENT_VERIFICATIONS = 4
+_verifications_running = 0
+
+
 async def consent_form(request: Request) -> Response:
     """GET /consent?req=<id>: the page a user fills in with their own Evolution instance."""
     deps: ConsentDeps = request.app.state.consent_deps
@@ -162,6 +168,10 @@ async def consent_submit(request: Request) -> Response:
         if refusal is not None:
             return _rerender(deps, shown, refusal)
 
+    global _verifications_running
+    if _verifications_running >= MAX_CONCURRENT_VERIFICATIONS:
+        return _rerender(deps, shown, "The server is checking other connections right now. Try again in a minute.")
+    _verifications_running += 1
     try:
         # Bounded by construction: the thread joins the child for at most _VERIFY_TIMEOUT (+ the reap), so a
         # cancelled request waits out at most that, and the terminate/kill bookkeeping is never half-done.
@@ -169,6 +179,8 @@ async def consent_submit(request: Request) -> Response:
     except Exception:
         logger.info("consent: verification failed for host %s", host)
         return _rerender(deps, shown, "The Evolution server could not be verified.")
+    finally:
+        _verifications_running -= 1
     if outcome.status != "ok":
         logger.info("consent: verification %s for host %s", outcome.status, host)
         return _rerender(deps, shown, outcome.detail)

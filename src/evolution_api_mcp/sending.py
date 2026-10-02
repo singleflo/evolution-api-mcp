@@ -81,7 +81,7 @@ async def build_options(
                 mentioned.append(phone)
         options["mentioned"] = mentioned
     if mention_everyone:
-        options["everyOne"] = True
+        options["mentionsEveryOne"] = True  # the key Evolution's services read; its JSON schema names it everyOne
     if link_preview is not None:
         options["linkPreview"] = link_preview
     return options

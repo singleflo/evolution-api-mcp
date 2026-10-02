@@ -493,6 +493,22 @@ def test_allow_private_targets_admits_the_private_address(store, verify, provide
     assert verify.calls[0]["base_url"] == "https://169.254.169.254"
 
 
+def test_verification_stops_when_too_many_are_already_running_and_the_counter_recovers(
+    store, verify, provider, monkeypatch
+):
+    """Given the verification slots all taken, When the form is posted, Then it asks to retry and dials nothing;
+    once a slot frees, the same post completes."""
+    monkeypatch.setattr(consent, "_verifications_running", consent.MAX_CONCURRENT_VERIFICATIONS)
+    busy = client(store, provider).post("/consent", data=_form())
+    assert busy.status_code == 200
+    assert "checking other connections right now" in busy.text
+    assert verify.calls == []
+
+    monkeypatch.setattr(consent, "_verifications_running", 0)
+    assert client(store, provider).post("/consent", data=_form()).status_code == 302
+    assert consent._verifications_running == 0
+
+
 # ------------------------------------------------------- integration rule
 def test_a_baileys_instance_is_refused_with_the_business_only_message_and_nothing_is_stored(
     db_path, store, verify, provider

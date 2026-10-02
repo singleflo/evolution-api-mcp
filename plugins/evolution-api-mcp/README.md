@@ -24,7 +24,7 @@ server-wide `AUTHENTICATION_API_KEY` is refused.
 `uv` must be on your PATH (`curl -LsSf https://astral.sh/uv/install.sh | sh`),
 because both manifests start the server with `uvx evolution-api-mcp`. Optional
 settings (toolsets, allow and deny lists, pacing, file folders) are documented in
-the [README](../../README.md#configuration); set them as environment variables in
+the [README](../../README.md#2-configure-environment-variables); set them as environment variables in
 the same shell.
 
 ## Claude Code

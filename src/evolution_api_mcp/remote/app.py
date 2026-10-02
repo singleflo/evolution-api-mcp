@@ -628,7 +628,8 @@ def main() -> None:
         sys.exit(f"evolution-api-mcp-remote: {exc}")
     import uvicorn
 
-    uvicorn.run(app, host=settings.host, port=settings.port, log_config=None)
+    # No access log: /files/<token> and /consent?req=<id> carry bearer secrets in the URL.
+    uvicorn.run(app, host=settings.host, port=settings.port, log_config=None, access_log=False)
 
 
 if __name__ == "__main__":

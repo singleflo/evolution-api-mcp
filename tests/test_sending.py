@@ -136,7 +136,7 @@ async def test_mentions_are_normalised_to_digits_on_baileys(evo, make_connection
         evo, make_connection(), mention=["+39 333 123 4567", "393331234567@s.whatsapp.net"], mention_everyone=True
     )
     assert options["mentioned"] == ["393331234567"]
-    assert options["everyOne"] is True
+    assert options["mentionsEveryOne"] is True
 
 
 @pytest.mark.anyio
