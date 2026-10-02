@@ -1,0 +1,27 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "evolution-api-mcp",
+  "version": "1.0.0",
+  "description": "Operate one Evolution API (WhatsApp) instance: chats, history, sending, groups and settings",
+  "author": {
+    "name": "Persevida SL"
+  },
+  "homepage": "https://github.com/singleflo/evolution-api-mcp",
+  "repository": "https://github.com/singleflo/evolution-api-mcp",
+  "license": "MIT",
+  "keywords": ["mcp", "model-context-protocol", "evolution-api", "whatsapp", "messaging", "claude", "chatgpt"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Evolution API Assistant",
+        "shortDescription": "Evolution API messaging tools",
+        "category": "Productivity",
+        "websiteURL": "https://github.com/singleflo/evolution-api-mcp",
+        "privacyPolicyURL": "https://evolution-mcp.singleflo.com/privacy",
+        "termsOfServiceURL": "https://evolution-mcp.singleflo.com/terms",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      }
+    }
+  }
+}

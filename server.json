@@ -1,0 +1,98 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.singleflo/evolution-api-mcp",
+  "description": "Operate one Evolution API (WhatsApp) instance: chats, history, sending, groups, settings.",
+  "repository": {
+    "url": "https://github.com/singleflo/evolution-api-mcp",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "evolution-api-mcp",
+      "version": "1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "EVOLUTION_API_URL",
+          "description": "URL of your Evolution API server (e.g. https://evolution.example.com). Evolution API 2.x is required.",
+          "isRequired": true,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "EVOLUTION_INSTANCE_TOKEN",
+          "description": "The token of this one instance (Evolution Manager: open the instance and copy its token). The server's global AUTHENTICATION_API_KEY is refused. The instance name and integration are discovered from the token.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "EVOLUTION_MCP_TOOLSETS",
+          "description": "Toolsets to enable: a comma list of instance, messaging, chats, contacts, groups, labels, profile, status, catalog, templates, settings, events, integrations, or the presets `core` and `all`. Default: `core` (messaging, chats, contacts). The --toolsets option overrides it.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "EVOLUTION_MCP_ALLOW",
+          "description": "Tools that change data the agent may call. `*` (default) allows every tool not denied; `none` makes the server read-only; or a comma list of tool names. Reads are never gated by this list.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "EVOLUTION_MCP_DENY",
+          "description": "Tool names the agent may never call. A value set here REPLACES the default list, which is post_status, remove_group_participants, set_webhook, set_event_channel, set_proxy, set_chatwoot_config.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "EVOLUTION_MCP_ALLOW_IRREVERSIBLE",
+          "description": "Tools that cannot be undone (logout_instance, delete_message_for_everyone, leave_group, delete_template, delete_chatbot, delete_openai_credential) run only when this is `yes` (also `true` or `1`). Default: no.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "EVOLUTION_MCP_DEFAULT_DELAY_MS",
+          "description": "Milliseconds of 'typing...' Evolution shows before each message is sent when a call gives no delay. Integer from 0 to 20000. Default: 1200.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "number"
+        },
+        {
+          "name": "EVOLUTION_MCP_MAX_WRITES_PER_MINUTE",
+          "description": "Maximum number of tools that change data per minute on this server; 0 turns the limit off. Integer, 0 or more. Default: 30.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "number"
+        },
+        {
+          "name": "EVOLUTION_MCP_FILE_ROOTS",
+          "description": "Folders send_local_file may read: absolute paths of existing directories separated by the operating system's path separator (':' on macOS and Linux, ';' on Windows). Default: Desktop, Documents, Downloads, Pictures, Movies and Music in the home folder (those that exist) plus the download folder.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "EVOLUTION_MCP_DOWNLOAD_DIR",
+          "description": "Absolute folder where download_message_media saves received files. Default: ~/Downloads/evolution-api-mcp.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://evolution-mcp.singleflo.com/mcp"
+    }
+  ]
+}

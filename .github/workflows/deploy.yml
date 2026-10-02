@@ -1,0 +1,60 @@
+name: Deploy to Coolify
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # A tag must never reach production untested: the same essentials tests.yml
+  # runs on every push gate the deploy here.
+  tests:
+    name: Tests (deploy gate)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra remote
+
+      # No -m here: addopts already excludes live, wheel, remote_live and sandbox.
+      - name: Run default tests
+        run: uv run pytest tests/
+
+      - name: Build package
+        run: uv build
+
+  deploy:
+    name: Trigger Coolify deploy webhook
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard - skip when the Coolify secrets are absent
+        id: guard
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_DEPLOY_WEBHOOK: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}
+        run: |
+          if [ -z "$COOLIFY_API_TOKEN" ] || [ -z "$COOLIFY_DEPLOY_WEBHOOK" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "COOLIFY_API_TOKEN and/or COOLIFY_DEPLOY_WEBHOOK unset; skipping deploy (forks no-op here)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger deploy
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_DEPLOY_WEBHOOK: ${{ secrets.COOLIFY_DEPLOY_WEBHOOK }}
+        run: |
+          curl --fail --request GET "$COOLIFY_DEPLOY_WEBHOOK" \
+            --header "Authorization: Bearer $COOLIFY_API_TOKEN"

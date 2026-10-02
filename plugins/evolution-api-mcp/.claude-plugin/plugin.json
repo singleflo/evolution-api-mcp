@@ -1,0 +1,9 @@
+{
+  "name": "evolution-api-mcp",
+  "description": "Operate one Evolution API (WhatsApp) instance: chats, history, sending, groups and settings",
+  "version": "1.0.0",
+  "author": {
+    "name": "Persevida SL"
+  },
+  "mcpServers": "./.mcp.json"
+}

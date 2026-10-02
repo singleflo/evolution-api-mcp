@@ -1,0 +1,14 @@
+.venv
+.git
+.github
+dist
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.agents
+.claude
+.claude-plugin
+docs
+plugins
+tests

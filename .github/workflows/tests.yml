@@ -1,0 +1,68 @@
+name: Tests
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra remote
+
+      - name: Lint
+        run: uv run ruff check src tests scripts
+
+      # pytest.ini_options.addopts already excludes the live, wheel, remote_live and
+      # sandbox markers. Never pass -m here: it would replace addopts and pull them in.
+      - name: Run default tests
+        run: uv run pytest tests/
+
+      - name: Build package
+        run: uv build
+
+      - name: Assert wheel contents
+        shell: bash
+        run: |
+          uv run python - <<'PY'
+          import glob
+          import zipfile
+          from pathlib import Path
+
+          wheel = glob.glob("dist/*.whl")[0]
+          package = Path("src/evolution_api_mcp")
+          expected = {
+              "evolution_api_mcp/assets/guide.md",
+              "evolution_api_mcp/remote/pages/privacy.md",
+              "evolution_api_mcp/remote/pages/terms.md",
+              "evolution_api_mcp/remote/pages/support.md",
+              "evolution_api_mcp/remote/pages/style.css",
+          }
+          expected |= {f"evolution_api_mcp/tools/{path.name}" for path in (package / "tools").glob("*.py")}
+          with zipfile.ZipFile(wheel) as archive:
+              missing = expected - set(archive.namelist())
+          assert not missing, f"Missing wheel files: {sorted(missing)}"
+          print("FINAL_WHEEL_ASSERTION_OK")
+          PY
+
+      # A clean exit of `uvx --from <wheel> evolution-api-mcp` on empty stdin proves nothing:
+      # EOF closes the session before any tool runs. This suite drives a real tools/call.
+      - name: Run installed-wheel E2E
+        run: uv run pytest tests/ -m wheel

@@ -1,0 +1,16 @@
+{
+  "name": "evolution-api-mcp",
+  "description": "Evolution API Assistant: read, search and answer your Evolution API chats from Claude Code",
+  "owner": {
+    "name": "Persevida SL"
+  },
+  "plugins": [
+    {
+      "name": "evolution-api-mcp",
+      "source": "./plugins/evolution-api-mcp",
+      "description": "Operate one Evolution API (WhatsApp) instance: chats, history, sending, groups and settings",
+      "version": "1.0.0",
+      "category": "productivity"
+    }
+  ]
+}

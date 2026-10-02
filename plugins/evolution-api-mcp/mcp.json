@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "evolution-api-mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["evolution-api-mcp"],
+      "env": {
+        "EVOLUTION_API_URL": "${EVOLUTION_API_URL}",
+        "EVOLUTION_INSTANCE_TOKEN": "${EVOLUTION_INSTANCE_TOKEN}"
+      }
+    }
+  }
+}

@@ -1,0 +1,80 @@
+name: Publish to PyPI and MCP Registry
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  pypi:
+    name: Publish package to PyPI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra remote
+
+      - name: Check release consistency
+        run: uv run python scripts/check-release-consistency.py
+
+      # No -m here: addopts already excludes live, wheel, remote_live and sandbox.
+      - name: Run unit tests (the wheel suite needs a built artifact and runs below)
+        run: uv run pytest tests/
+
+      - name: Build package
+        run: uv build
+
+      - name: Run wheel E2E tests against the built artifact
+        run: uv run pytest tests/ -m wheel
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  registry:
+    name: Publish server to MCP Registry
+    needs: pypi
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install mcp-publisher
+        shell: bash
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Wait for PyPI propagation
+        shell: bash
+        run: |
+          VERSION="$(python3 -c "import json; print(json.load(open('server.json'))['packages'][0]['version'])")"
+          URL="https://pypi.org/pypi/evolution-api-mcp/${VERSION}/json"
+          echo "Waiting for ${URL} to return HTTP 200 (PyPI CDN propagation, MCP Registry issue #553)"
+          for attempt in $(seq 1 10); do
+            CODE="$(curl -s -o /dev/null -w "%{http_code}" "${URL}" || true)"
+            echo "Attempt ${attempt}/10: HTTP ${CODE}"
+            if [ "$CODE" = "200" ]; then
+              echo "evolution-api-mcp ${VERSION} is live on PyPI."
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "ERROR: ${URL} never returned HTTP 200 after 10 attempts 30s apart."
+          echo 'Remedy: re-run only the registry job (`gh run rerun --job <id>`); do NOT bump the version; do NOT re-run the pypi job - the PyPI upload already succeeded.'
+          exit 1
+
+      - name: Publish to MCP Registry
+        run: ./mcp-publisher publish

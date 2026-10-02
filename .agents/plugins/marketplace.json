@@ -1,0 +1,20 @@
+{
+  "name": "evolution-api-mcp",
+  "interface": {
+    "displayName": "Evolution API Assistant"
+  },
+  "plugins": [
+    {
+      "name": "evolution-api-mcp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/evolution-api-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
