@@ -18,3 +18,5 @@ __pycache__/
 # internal planning evidence, private hosts and history stay out of the public repo
 docs/research/
 tests/sandbox/.env
+# development-only omp config (reads the EVOLUTION_TEST_* variables from the shell)
+.omp/
