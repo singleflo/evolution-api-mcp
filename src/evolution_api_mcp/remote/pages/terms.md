@@ -31,7 +31,7 @@ You are solely responsible for:
 
 ## Operation Scope and Safeguards
 
-Our hosted remote server acts as an operational bridge to execute the actions your AI client host requests on your Evolution instance. This deployment connects WhatsApp Business Platform instances unless its operator states otherwise on the consent page.
+Our hosted remote server acts as an operational bridge to execute the actions your AI client host requests on your Evolution instance. The consent page states which Evolution integrations this deployment connects: WhatsApp Business Platform instances, and where the page lists it, WhatsApp Web (Baileys) instances. A Baileys instance is an unofficial WhatsApp Web client; WhatsApp's own terms apply to the number you link that way, WhatsApp may restrict it, and you accept that risk when you connect one.
 
 The hosted bridge is structured to respect the settings you chose during consent: a read-only connection refuses every tool that changes data, and only the toolsets you ticked are offered. Actions that cannot be undone from this server, namely logging the WhatsApp session out, deleting a message for everyone, leaving a group, and deleting message templates, chatbots or credentials, are never available through the hosted route, and neither are tools that take passwords, API keys or tokens as input; no setting can change this. Those exist only in a local install running on your own machine, where you as the operator grant them deliberately. You remain responsible for reviewing and controlling actions issued by connected AI assistants.
 

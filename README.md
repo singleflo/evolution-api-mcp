@@ -17,8 +17,8 @@ or the Evolution API project.
   send files from your disk.
 * **Hosted** — `https://evolution-mcp.singleflo.com/mcp` is served over the internet for Claude.ai, ChatGPT and Codex:
   nothing to install, you sign in once with your Evolution URL and instance token. The public hosted server accepts
-  instances whose integration is `WHATSAPP-BUSINESS` (the official WhatsApp Business Platform) only, and never offers
-  the tools that take secrets or cannot be undone. See "Hosted server" below.
+  instances whose integration is `WHATSAPP-BUSINESS` (the official WhatsApp Business Platform) or `WHATSAPP-BAILEYS`
+  (a WhatsApp Web session), and never offers the tools that take secrets or cannot be undone. See "Hosted server" below.
 
 ## Quickstart
 
@@ -278,9 +278,12 @@ again.
 
 The hosted server differs from the local one in what it will connect to and offer:
 
-* It accepts only instances whose integration is `WHATSAPP-BUSINESS`. For a `WHATSAPP-BAILEYS` or `EVOLUTION`
-  instance, run the local server. A private deployment can widen this with `EVOLUTION_REMOTE_ALLOWED_INTEGRATIONS`;
-  see [docs/REMOTE.md](docs/REMOTE.md).
+* The public deployment at `evolution-mcp.singleflo.com` accepts instances whose integration is `WHATSAPP-BUSINESS` or
+  `WHATSAPP-BAILEYS`; an `EVOLUTION` channel instance needs the local server. A server started without
+  `EVOLUTION_REMOTE_ALLOWED_INTEGRATIONS` accepts `WHATSAPP-BUSINESS` only, which is the default of the code and the
+  setting the store listings assume; see [docs/REMOTE.md](docs/REMOTE.md). A `WHATSAPP-BAILEYS` instance is an
+  unofficial WhatsApp Web client: WhatsApp's terms do not cover automating a personal account that way, and WhatsApp
+  can restrict a number that is used like this. The choice is yours; the Business Platform is the supported route.
 * The Evolution server must be reachable from the internet at a public address; private and loopback addresses are
   refused.
 * The irreversible tools and the 8 local-only tools are never available, and the default deny list always applies.
@@ -886,9 +889,9 @@ Source: https://claude.com/docs/connectors/building/directory-vs-custom
 ### Open WebUI and Mistral Le Chat
 
 These two clients connect only to remote MCP servers, so they use the hosted server at
-`https://evolution-mcp.singleflo.com/mcp`, which accepts WhatsApp Business Platform instances. For a Baileys or Evolution
-instance, run the local server in one of the hosts above. The sign-in is the one described under "Hosted server": your
-Evolution URL, the instance token, and the policy and toolsets, on the server's consent page.
+`https://evolution-mcp.singleflo.com/mcp`, which accepts WhatsApp Business Platform and Baileys instances. For an
+Evolution channel instance, run the local server in one of the hosts above. The sign-in is the one described under
+"Hosted server": your Evolution URL, the instance token, and the policy and toolsets, on the server's consent page.
 
 **Open WebUI.** An administrator opens **Settings → Admin → Integrations**, presses **+ Add Connection** under
 **External Tool Servers**, sets **Type** to **MCP (Streamable HTTP)**, enters `https://evolution-mcp.singleflo.com/mcp`

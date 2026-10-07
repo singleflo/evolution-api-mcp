@@ -34,7 +34,7 @@ When reporting an issue on GitHub, please include:
 You can disconnect the integration directly inside your AI host application (e.g., Claude or ChatGPT). Disconnecting immediately revokes your active token family and purges your stored instance token from our remote database.
 
 ### What should I do if authorization fails?
-Ensure that your Evolution URL is reachable over HTTPS from the public internet and that you pasted the token of one instance, not the server's global API key, which is refused. Evolution resolves instance tokens only when it runs with `DATABASE_SAVE_DATA_INSTANCE=true`, which is its default. If your instance uses the WhatsApp Web (Baileys) integration, this hosted server refuses it: it connects WhatsApp Business Platform instances only, and the local server (`uvx evolution-api-mcp`) covers every integration.
+Ensure that your Evolution URL is reachable over HTTPS from the public internet and that you pasted the token of one instance, not the server's global API key, which is refused. Evolution resolves instance tokens only when it runs with `DATABASE_SAVE_DATA_INSTANCE=true`, which is its default. If your instance uses the Evolution channel integration, this hosted server refuses it, because it connects WhatsApp Business Platform and WhatsApp Web (Baileys) instances; the local server (`uvx evolution-api-mcp`) covers every integration.
 
 ### Why is a tool missing or refused?
 The assistant is offered only the toolsets you ticked on the consent page, and a read-only connection refuses every tool that changes data. Connect again to choose differently. Tools that cannot be undone, and tools that take secrets, are never available on the hosted server.

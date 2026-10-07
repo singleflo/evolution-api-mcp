@@ -54,11 +54,16 @@ mismatch.
 
 The consent page verifies the instance before it stores anything: the server must answer like Evolution API 2.x, the
 token must be an instance token (the server-wide `AUTHENTICATION_API_KEY` is refused), and the token must belong to
-exactly one instance. It then checks the instance's integration against `EVOLUTION_REMOTE_ALLOWED_INTEGRATIONS`. The
-public deployment keeps the default, `WHATSAPP-BUSINESS`, so an instance on another integration is refused with:
+exactly one instance. It then checks the instance's integration against `EVOLUTION_REMOTE_ALLOWED_INTEGRATIONS`. Without
+that variable only `WHATSAPP-BUSINESS` is accepted, so an instance on another integration is refused with:
 
 > This hosted server connects WhatsApp Business Platform instances only (integration WHATSAPP-BUSINESS). This instance
 > uses WHATSAPP-BAILEYS; run the local server (uvx evolution-api-mcp) for it.
+
+The public deployment at `evolution-mcp.singleflo.com` sets the variable to `WHATSAPP-BAILEYS,WHATSAPP-BUSINESS`, so it
+also accepts WhatsApp Web (Baileys) instances; the code default and the store listings stay Business-only. OpenAI's
+plugin guidelines rule out connectors that are primarily unofficial, so **unset the variable (and redeploy) before
+submitting to the OpenAI Plugin Directory**, and keep it unset while a reviewer account is tested.
 
 A private deployment can widen the list. What a connection can do is then decided per request by the same gate the
 local server uses: the toolsets and the policy chosen on the consent page, the instance's integration, and the hosted

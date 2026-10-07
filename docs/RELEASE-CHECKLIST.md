@@ -150,7 +150,8 @@ that Coolify surfaces under **Configuration → Environment Variables** and refu
    and keep a copy of it somewhere safe: losing it makes every stored instance token unreadable, so every user has to
    reconnect. Set `EVOLUTION_REMOTE_OPENAI_CHALLENGE`, `EVOLUTION_REMOTE_PUBLISHER`, `EVOLUTION_REMOTE_SUPPORT_EMAIL`
    and `EVOLUTION_REMOTE_ALLOWED_INTEGRATIONS` as wanted (all four are optional; the last one defaults to
-   `WHATSAPP-BUSINESS`, which is what the store listings describe, so leave it unset on the public server).
+   `WHATSAPP-BUSINESS`, which is what the store listings describe. The public server currently sets it to
+   `WHATSAPP-BAILEYS,WHATSAPP-BUSINESS`: unset it and redeploy before the OpenAI submission).
 6. **Advanced**: turn **Auto Deploy** on.
 7. Press **Deploy** the first time and watch the deployment log.
 8. **Keys & Tokens → API Tokens**: create a token with the **deploy** permission; **Webhooks → Deploy Webhook**: copy
