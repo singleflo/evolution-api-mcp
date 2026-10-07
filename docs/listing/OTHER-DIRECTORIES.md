@@ -62,7 +62,7 @@ The local server takes two required environment variables, `EVOLUTION_API_URL` a
 ### Gemini CLI Extensions
 
 - **URL**: https://geminicli.com
-- **What to paste**: The reference project recorded that Gemini CLI was deprecated and replaced by Antigravity CLI on June 18, 2026, and that a separate `gemini-extension.json` manifest is not worth a follow-up; standard `mcpServers` configuration in `~/.gemini/settings.json` with `uvx evolution-api-mcp` is sufficient. Not re-verified — confirm on submission day.
+- **What to paste**: The reference project recorded that Gemini CLI was deprecated and replaced by Antigravity CLI on June 18, 2026, and that a separate `gemini-extension.json` manifest is not worth a follow-up; standard `mcpServers` configuration in `~/.gemini/settings.json` with `uvx evolution-api-mcp` is sufficient. Source for the June 18, 2026 transition (Gemini CLI serves only Gemini Code Assist Standard/Enterprise and paid API-key users; other users move to Antigravity, which reads `~/.gemini/config/mcp_config.json`): https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/ — verified 2026-10-02.
 - **Transport**: stdio accepted.
 - **Review required**: No (client-side configuration).
 - **Cost**: Free.

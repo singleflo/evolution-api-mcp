@@ -6,7 +6,7 @@ from pydantic import Field
 
 from evolution_api_mcp import calls, context, jid, registry
 from evolution_api_mcp.errors import tool_result
-from evolution_api_mcp.tools.contacts import compact, person, refuse_absent_number
+from evolution_api_mcp.tools.contacts import compact, refuse_absent_number
 
 _PRODUCT_KEYS = (
     "id",
@@ -87,7 +87,7 @@ async def list_catalog_products(
 
 
 def _digits(business_number: str) -> str:
-    return person(business_number)[1]
+    return calls.parse_phone(business_number)
 
 
 @registry.tool(

@@ -16,7 +16,14 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Topic :: Communications :: Chat",
 ]
-dependencies = ["mcp>=2.2.0,<3", "pydantic>=2.12", "httpx2>=2.5,<3", "httpcore2>=2.5,<3", "anyio>=4.9"]
+dependencies = [
+    "mcp>=2.2.0,<3",
+    "pydantic>=2.12",
+    "httpx2>=2.5,<3",
+    "httpcore2>=2.5,<3",
+    "anyio>=4.9",
+    "tzdata>=2024.1; sys_platform == 'win32'",
+]
 
 [project.optional-dependencies]
 remote = ["uvicorn>=0.31", "cryptography>=42"]

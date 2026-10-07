@@ -18,7 +18,7 @@ from mcp.server import MCPServer
 from mcp.server.auth.provider import OAuthAuthorizationServerProvider
 from mcp.server.auth.settings import AuthSettings
 
-from evolution_api_mcp import __version__, context, registry, resources, tools
+from evolution_api_mcp import __version__, context, prompts, registry, resources, tools
 from evolution_api_mcp.config import ConfigError, load_local_config
 from evolution_api_mcp.middleware import VisibilityMiddleware
 from evolution_api_mcp.toolsets import DEFAULT_TOOLSETS, PRESETS, TOOLSET_ORDER, TOOLSETS
@@ -38,7 +38,21 @@ INSTRUCTIONS = (
     "Send tools deliver real messages to real people and this server cannot recall them; "
     "recipients and wording come from the user. "
     "On WhatsApp Business Platform instances a person receives free-form messages only within 24 hours of their "
-    "last message; outside that window only approved templates (send_template_message) are delivered."
+    "last message; outside that window only approved templates (send_template_message) are delivered. "
+    "Chat, group, sender and recipient parameters take the name the user gave, a phone number or a chat_id, so "
+    "find_chats is needed only to turn a name into a phone number or to list candidates; an ambiguous name is "
+    "refused with the matching chat_ids, and tools that send or change something accept only an exact name. "
+    "get_chat describes one person or group from a name, number or chat_id: phone number, unread count and groups in "
+    "common. "
+    "list_recent_messages shows the newest messages of every chat in one call, read_messages with "
+    "around_message_id shows the conversation around one message, and search_messages filters by sender, "
+    "message type and file name. "
+    "A reply needs only reply_to_message_id; forward_message re-sends a message to up to 5 chats; "
+    "export_chat saves a chat with its attachments, or only the attachments of a type (content=media, media_types) "
+    "in one call, where download_message_media saves one attachment. "
+    "Times are shown in the server's time zone, and a time given without a zone is read in that zone, so a date or "
+    "time the user names is passed as written; get_instance_status reports the zone. "
+    "The evolution://recipes resource lists tested call sequences for common tasks."
 )
 
 logger = logging.getLogger("evolution_api_mcp")
@@ -67,6 +81,7 @@ def build_server(
     )
     registry.register_all(server, mode=mode)
     resources.register(server)
+    prompts.register(server)
     return server
 
 

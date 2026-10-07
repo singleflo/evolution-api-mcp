@@ -10,7 +10,7 @@ from urllib.parse import quote
 
 from pydantic import Field
 
-from evolution_api_mcp import calls, context, messages, registry
+from evolution_api_mcp import calls, clock, context, messages, registry
 from evolution_api_mcp.client import EvolutionClient, EvolutionHTTPError
 from evolution_api_mcp.context import InstanceIdentity
 from evolution_api_mcp.errors import ToolExecutionError, tool_result
@@ -173,7 +173,6 @@ _BRIEF_KEYS = (
     "model",
 )
 _WILDCARD_JIDS = ("@g.us", "@s.whatsapp.net")
-_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
 Provider = Annotated[
     ChatbotProvider,
@@ -185,7 +184,7 @@ OptionalChat = Annotated[
     Field(
         min_length=3,
         max_length=128,
-        description="Only sessions of this chat: phone number or chat_id from list_chats.",
+        description="Only sessions of this chat: phone number, chat_id or chat name from list_chats.",
     ),
 ]
 _Enabled = Annotated[bool | None, Field(description="Whether the chatbot answers messages.")]
@@ -404,7 +403,7 @@ def _redacted(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _iso_date(value: object) -> str | None:
-    """ISO-8601 UTC string of a JSON date (`2026-09-29T21:04:05.123Z`) or a unix timestamp."""
+    """ISO-8601 time (display zone) of a JSON date (`2026-09-29T21:04:05.123Z`) or a unix timestamp."""
     if not isinstance(value, str):
         return messages.iso(value)
     try:
@@ -413,7 +412,7 @@ def _iso_date(value: object) -> str | None:
         return None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc).strftime(_TIME_FORMAT)
+    return clock.fmt(moment)
 
 
 def _ignored_jids(values: list[str] | None) -> list[str] | None:
@@ -422,7 +421,7 @@ def _ignored_jids(values: list[str] | None) -> list[str] | None:
         return None
     result: list[str] = []
     for value in values:
-        jid_value = value.strip() if value.strip() in _WILDCARD_JIDS else calls.chat(value)
+        jid_value = value.strip() if value.strip() in _WILDCARD_JIDS else calls.parse_chat(value)
         if jid_value not in result:
             result.append(jid_value)
     return result
@@ -906,7 +905,7 @@ async def list_chatbot_sessions(provider: Provider, bot_id: BotId, chat: Optiona
     session, and get_chatbot for the bot's own configuration.
     """
     conn, client = await context.resolve()
-    chat_jid = calls.chat(chat) if chat else None
+    chat_jid = await calls.resolve_chat(client, conn, chat, purpose="read") if chat else None
     rows = await _provider_call(client, conn.identity, provider, "GET", "fetchSessions", bot_id)
     sessions = []
     for row in rows if isinstance(rows, list) else []:
@@ -957,7 +956,7 @@ async def change_chatbot_session(
     context. Use list_chatbot_sessions to see the current statuses. Returns the chat_id and the status that was set.
     """
     conn, client = await context.resolve()
-    chat_jid = calls.chat(chat)
+    chat_jid = await calls.resolve_chat(client, conn, chat, purpose="write")
     await _provider_call(
         client,
         conn.identity,
@@ -992,7 +991,7 @@ async def set_chatbot_ignored_chat(
     Returns the chat_id and whether it is now ignored.
     """
     conn, client = await context.resolve()
-    chat_jid = calls.chat(chat)
+    chat_jid = await calls.resolve_chat(client, conn, chat, purpose="write")
     await _provider_call(
         client,
         conn.identity,
@@ -1043,7 +1042,7 @@ async def start_typebot_session(
     flow that starts from triggers instead.
     """
     conn, client = await context.resolve()
-    chat_jid = calls.chat(chat)
+    chat_jid = await calls.resolve_chat(client, conn, chat, purpose="send")
     body = {
         "remoteJid": chat_jid,
         "url": typebot_url,

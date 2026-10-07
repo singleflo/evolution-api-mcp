@@ -90,14 +90,15 @@ def tool(
         @functools.wraps(fn)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Imported here: context and policy import this module.
-            from evolution_api_mcp import context, policy, ratelimit
+            from evolution_api_mcp import clock, context, policy, ratelimit
 
             conn, _ = await context.resolve()
             reason = policy.refusal(spec, conn)
             if reason:
                 raise ToolExecutionError(reason)
             ratelimit.check(spec, conn)
-            return await fn(*args, **kwargs)
+            with clock.displayed_in(conn.timezone):
+                return await fn(*args, **kwargs)
 
         try:
             # The SDK derives the input schema from `inspect.signature(func, eval_str=True)`, which follows

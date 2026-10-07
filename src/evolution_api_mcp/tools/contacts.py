@@ -1,33 +1,22 @@
-"""Contacts toolset: find contacts, check numbers on WhatsApp, profiles, block and unblock."""
+"""Contacts toolset: find chats by name or number, check numbers on WhatsApp, profiles, block and unblock."""
 
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 
-from evolution_api_mcp import calls, context, jid, registry
+from evolution_api_mcp import calls, context, directory, jid, messages, registry
 from evolution_api_mcp.client import EvolutionHTTPError
 from evolution_api_mcp.errors import ToolExecutionError, tool_result
 from evolution_api_mcp.sending import _absent_number
 from evolution_api_mcp.tools import Chat
 
-SCAN_PAGE_SIZE = 500
-SCAN_ROW_LIMIT = 5_000
 _BUSINESS_KEYS = ("description", "category", "email", "website", "address", "business_hours")
 
 
 def compact(values: dict) -> dict:
     """`values` without the entries whose value is None."""
     return {key: value for key, value in values.items() if value is not None}
-
-
-def person(chat: str) -> tuple[str, str]:
-    """(chat id, phone digits) of a person; groups and @lid ids are refused."""
-    chat_jid = calls.chat(chat)
-    digits = jid.phone_of(chat_jid)
-    if digits is None:
-        raise ToolExecutionError(f"{chat} is not a phone number; this tool takes international phone numbers.")
-    return chat_jid, digits
 
 
 def refuse_absent_number(digits: str) -> Callable[[EvolutionHTTPError], None]:
@@ -44,103 +33,47 @@ def _rows(body: object) -> list[dict]:
     return [row for row in body if isinstance(row, dict)] if isinstance(body, list) else []
 
 
-def _contact(row: dict) -> dict:
-    chat_id = row["remoteJid"]
-    return compact(
-        {
-            "chat_id": chat_id,
-            "name": row.get("pushName"),
-            "phone": jid.phone_of(chat_id),
-            "is_group": jid.is_group(chat_id),
-            "saved": bool(row.get("isSaved")),
-        }
-    )
-
-
-@registry.tool(title="Find contacts", toolset="contacts", kind="read", idempotent=True)
-async def find_contacts(
-    name: Annotated[
-        str | None,
-        Field(
-            min_length=1,
-            max_length=100,
-            description="Part of the contact's WhatsApp display name; matched without regard to case.",
-        ),
-    ] = None,
-    phone: Annotated[
-        str | None,
-        Field(
-            min_length=3,
-            max_length=128,
-            description="International phone number or chat_id of one contact to look up exactly.",
-        ),
-    ] = None,
-    include_groups: Annotated[bool, Field(description="Also return group chats. Default: people only.")] = False,
-    limit: Annotated[int, Field(ge=1, le=100, description="Maximum contacts to return.")] = 20,
-    offset: Annotated[int, Field(ge=0, le=10000, description="Matching contacts to skip, for paging.")] = 0,
+@registry.tool(title="Find chats by name or number", toolset="contacts", kind="read", idempotent=True)
+async def find_chats(
+    query: Annotated[
+        str,
+        Field(min_length=2, max_length=100, description="Part of a name, or at least 3 digits of a phone number."),
+    ],
+    kind: Annotated[Literal["all", "people", "groups"], Field(description="People, groups, or both.")] = "all",
+    limit: Annotated[int, Field(ge=1, le=50, description="Maximum number of chats.")] = 10,
 ) -> str:
-    """Find stored contacts by display name or phone number.
+    """Turn a name or phone number into chat_ids: people and groups whose name or number matches the query.
 
-    Evolution matches names exactly, so this tool filters names itself over the stored contacts (the first 5,000
-    are scanned). A phone number looks up that one contact directly. Without either filter it lists contacts in
-    stored order. Contacts are the people Evolution has seen on this instance: saved contacts and people met in
-    chats or groups. Returns chat_id, name, phone, is_group and saved for each match, plus has_more and how many
-    stored contacts were scanned. For chats with recent activity, list_chats is the sibling tool.
+    Every chat parameter of the other tools also accepts an exact name, so this tool is for finding the right
+    chat_id when a name is partial or shared. The directory it searches holds the stored contacts, the group
+    subjects and the names seen on recent messages, so it needs no chat to exist yet. Names match without regard to
+    case and accents; a query of at least 3 digits matches phone numbers instead. Best matches come first: exact,
+    then prefix, then word prefix, then any part of the name. Returns chat_id, name, kind (person or group), phone
+    and, for people, saved (a saved contact) for each chat, plus the total number of matches. For chats with
+    recent activity, list_chats is the sibling tool.
     """
     conn, client = await context.resolve()
-    identity = conn.identity
-    wanted = name.casefold() if name else None
-
-    def keep(row: dict) -> bool:
-        remote = row.get("remoteJid")
-        if not isinstance(remote, str) or not remote:
-            return False
-        if not include_groups and jid.is_group(remote):
-            return False
-        return wanted is None or wanted in str(row.get("pushName") or "").casefold()
-
-    end = offset + limit
-    matches: list[dict] = []
-    scanned = 0
-    capped = False
-
-    if phone is not None:
-        chat_jid = calls.chat(phone)
-        rows = _rows(
-            await calls.call(client, identity, "POST", "chat/findContacts", json={"where": {"remoteJid": chat_jid}})
-        )
-        scanned = len(rows)
-        matches = [_contact(row) for row in rows if keep(row)]
-    else:
-        page = 1
-        exhausted = False
-        while scanned < SCAN_ROW_LIMIT and len(matches) <= end:
-            rows = _rows(
-                await calls.call(
-                    client,
-                    identity,
-                    "POST",
-                    "chat/findContacts",
-                    json={"where": {}, "offset": SCAN_PAGE_SIZE, "page": page},
-                )
+    names = await directory.get(client, conn)
+    wanted = {"all": None, "people": "person", "groups": "group"}[kind]
+    hits = [entry for entry in names.search(query, wanted) if not messages.is_noise_chat(entry.chat_id)]
+    chats = []
+    for entry in hits[:limit]:
+        chats.append(
+            compact(
+                {
+                    "chat_id": entry.chat_id,
+                    "name": names.name_of(entry.chat_id),
+                    "kind": entry.kind,
+                    "phone": names.phone_of(entry.chat_id) if entry.kind == "person" else None,
+                    "saved": entry.saved if entry.kind == "person" else None,
+                }
             )
-            scanned += len(rows)
-            matches.extend(_contact(row) for row in rows if keep(row))
-            if len(rows) < SCAN_PAGE_SIZE:
-                exhausted = True
-                break
-            page += 1
-        capped = not exhausted and len(matches) <= end and scanned >= SCAN_ROW_LIMIT
-
-    result: dict = {
-        "contacts": matches[offset:end],
-        "offset": offset,
-        "limit": limit,
-        "has_more": len(matches) > end,
-        "scanned": scanned,
-    }
-    if capped:
-        result["note"] = f"Only the first {SCAN_ROW_LIMIT} stored contacts were scanned; narrow with name or phone."
+        )
+    result: dict = {"query": query, "chats": chats, "total": len(hits)}
+    if names.incomplete:
+        result["note"] = (
+            f"Evolution did not return the {', '.join(names.incomplete)} list, so names there were not checked."
+        )
     return tool_result(result)
 
 
@@ -171,7 +104,7 @@ async def check_whatsapp_numbers(
     conn, client = await context.resolve()
     inputs: list[tuple[str, str]] = []
     for value in numbers:
-        chat_jid = calls.chat(value)
+        chat_jid = calls.parse_chat(value)
         digits = jid.phone_of(chat_jid)
         if digits is None:
             raise ToolExecutionError(
@@ -219,7 +152,7 @@ async def get_contact_profile(chat: Chat) -> str:
     error. get_business_profile returns the fuller business record.
     """
     conn, client = await context.resolve()
-    chat_jid, digits = person(chat)
+    chat_jid, digits = await calls.resolve_person(client, conn, chat, purpose="read")
     body = await calls.call(
         client,
         conn.identity,
@@ -264,7 +197,7 @@ async def get_business_profile(chat: Chat) -> str:
     them. For a general look at any contact, get_contact_profile is the sibling tool.
     """
     conn, client = await context.resolve()
-    chat_jid, digits = person(chat)
+    chat_jid, digits = await calls.resolve_person(client, conn, chat, purpose="read")
     body = await calls.call(
         client,
         conn.identity,
@@ -297,7 +230,7 @@ async def block_contact(chat: Chat) -> str:
     is already blocked changes nothing.
     """
     conn, client = await context.resolve()
-    chat_jid, digits = person(chat)
+    chat_jid, digits = await calls.resolve_person(client, conn, chat, purpose="write")
     await calls.call(
         client,
         conn.identity,
@@ -323,7 +256,7 @@ async def unblock_contact(chat: Chat) -> str:
     sent to them and they are not told. Unblocking a person who is not blocked changes nothing.
     """
     conn, client = await context.resolve()
-    chat_jid, digits = person(chat)
+    chat_jid, digits = await calls.resolve_person(client, conn, chat, purpose="write")
     await calls.call(
         client,
         conn.identity,

@@ -50,6 +50,7 @@ jobs:
           package = Path("src/evolution_api_mcp")
           expected = {
               "evolution_api_mcp/assets/guide.md",
+              "evolution_api_mcp/assets/recipes.md",
               "evolution_api_mcp/remote/pages/privacy.md",
               "evolution_api_mcp/remote/pages/terms.md",
               "evolution_api_mcp/remote/pages/support.md",

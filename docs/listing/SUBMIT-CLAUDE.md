@@ -35,7 +35,7 @@ The portal walks through sequential steps. Fill each field using the values from
 
 ### Step 3: Tools
 - Select **Sync Tools**. The portal reads the tools exposed by `https://evolution-mcp.singleflo.com/mcp` and verifies that every tool carries a title and valid annotations. Claude requires `title` plus the applicable `readOnlyHint` / `destructiveHint`; this server publishes the title in both `Tool.title` and `annotations.title` and all four hints as explicit booleans on every tool, which also satisfies OpenAI's stricter rule.
-- Tools are listed per connection: the scan sees the tools of the connection you authorise with. Authorise with the `standard` policy and every toolset ticked (see the reviewer account) so the sync reads all 38 tools. A connection that ticks fewer toolsets, or chooses `read`, shows fewer.
+- Tools are listed per connection: the scan sees the tools of the connection you authorise with. Authorise with the `standard` policy and every toolset ticked (see the reviewer account) so the sync reads all 41 tools. A connection that ticks fewer toolsets, or chooses `read`, shows fewer.
 
 ### Step 4: Listing
 - **Name**: `Evolution API Assistant` (from dossier section `Identity` -> `Name`, 100 characters max).

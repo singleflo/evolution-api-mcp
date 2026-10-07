@@ -6,15 +6,18 @@ reports the connection state, the integration of the instance and the toolsets t
 ## Chat ids and phone numbers
 
 Tools that take a chat accept an international phone number (country code first, no leading zeros; spaces, `+`,
-brackets and dashes are ignored) or a `chat_id` returned by another tool.
+brackets and dashes are ignored), a `chat_id` returned by another tool, or a contact or group name.
 
 | Form | Meaning |
 |---|---|
 | `<digits>@s.whatsapp.net` | a person, identified by phone number |
 | `<digits>@g.us` | a group |
-| `<id>@lid` | a person whose phone number WhatsApp hides (privacy id); it cannot be turned into a number |
+| `<id>@lid` | a person whose phone number WhatsApp hides (privacy id); it becomes a number only when earlier messages revealed it |
 
-A `:<device>` suffix before the `@` is dropped. Message ids come from `list_chats`, `read_messages` and
+A name is matched without regard to case and accents. A name shared by several chats is refused with the matching
+chat_ids, and tools that send or change something accept only an exact name; tools that only read also accept a part
+of a name that matches one chat. The server reads names from Evolution and keeps them in memory for at most 10
+minutes. A `:<device>` suffix before the `@` is dropped. Message ids come from `list_chats`, `read_messages` and
 `search_messages`. WhatsApp Business Platform instances address people by phone number only: groups and `@lid` ids
 need a WhatsApp Web (Baileys) instance.
 
@@ -34,11 +37,12 @@ An instance uses one of three integrations. `get_instance_status` reports which 
 |---|---|---|---|
 | Instance status, settings, proxy, webhook, event channels | yes | yes | yes |
 | Chatbots (Evolution Bot, Typebot, OpenAI, Dify, Flowise, n8n, EvoAI), OpenAI credentials, Chatwoot | yes | yes | yes |
-| Text, media from URL, local file, voice note, button messages | yes | yes (reply buttons only) | yes |
-| Chats, message history, search, message status | yes | yes | yes |
-| Find contacts | yes | yes | yes |
-| Location, contact card, list message, reactions | yes | yes | no |
+| Text, media from URL, local files, voice note, button messages | yes | yes (reply buttons only) | yes |
+| Chats, recent messages, message history, search, message status | yes | yes | yes |
+| Find chats by name or number | yes | yes | yes |
+| Location, contact card, list message, reactions, forwarding | yes | yes | no |
 | View and download received media | yes | yes (needs Evolution's S3/MinIO storage) | no |
+| Export a chat with its attachments | yes | yes (attachments need Evolution's S3/MinIO storage) | no |
 | Video note, sticker, poll, edit and delete for everyone, mentions, typing indicator | yes | no | no |
 | Pairing, restart, logout, presence | yes | no | no |
 | Read receipts (mark read), mark unread, archive | yes | no | no |
@@ -51,16 +55,17 @@ A tool called on an integration that lacks it is refused with a message naming t
 
 ## Where history comes from
 
-Evolution has no history of its own beyond what its database stores. `read_messages`, `search_messages`,
-`get_message` and `list_chats` read what Evolution saved:
+Evolution has no history of its own beyond what its database stores. `list_recent_messages`, `read_messages`,
+`search_messages`, `get_message` and `list_chats` read what Evolution saved:
 
 - Messages appear only when the Evolution server runs with `DATABASE_SAVE_DATA_NEW_MESSAGE=true`. Older history
   synced at pairing time needs `DATABASE_SAVE_DATA_HISTORIC=true`.
 - `search_messages` scans the newest 2000 messages and matches text itself, because Evolution has no text search.
   Narrow it with a chat or a time range to look further back.
 - On WhatsApp Business Platform instances Evolution keeps received media only when its S3/MinIO storage is enabled,
-  so `view_message_image` and `download_message_media` may find nothing there.
-- Timestamps are ISO-8601 UTC. Message text is cut at 1500 characters in lists; `get_message` returns up to 8000.
+  so `view_message_image`, `download_message_media` and the attachments of `export_chat` may find nothing there.
+- Timestamps are ISO-8601 in the server's display time zone (`get_instance_status` reports it; UTC on the hosted
+  server). Message text is cut at 1500 characters in lists; `get_message` returns up to 8000.
 
 ## Pacing, rate limits and WhatsApp rules
 
@@ -86,8 +91,8 @@ Toolsets group the tools. A connection enables some of them; the default is `cor
 |---|---|
 | `instance` | Connection status, QR pairing, restart, logout and online presence of the instance. |
 | `messaging` | Send text, media, voice notes, locations, contact cards, polls, list and button messages; react, edit and delete sent messages. |
-| `chats` | List chats, read and search message history, delivery status, read/unread and archive state, received media. |
-| `contacts` | Find contacts, check numbers on WhatsApp, profiles and profile pictures, block and unblock. |
+| `chats` | List chats, show the newest messages across chats, read and search message history, delivery status, read/unread and archive state, received media. |
+| `contacts` | Find chats by name or number, check numbers on WhatsApp, profiles and profile pictures, block and unblock. |
 | `groups` | Group details, participants, invite links, creation, settings and membership. |
 | `labels` | WhatsApp Business app labels on chats. |
 | `profile` | The instance's own profile name, about text, picture and privacy settings. |
@@ -115,9 +120,11 @@ consent page.
 - Irreversible tools run only when the local server has `EVOLUTION_MCP_ALLOW_IRREVERSIBLE=yes`. The hosted server
   never runs them.
 - Tools that take secrets (proxy and webhook settings, chatbot and Chatwoot configuration, OpenAI credentials) and
-  `send_local_file` are local-only; the hosted server does not offer them.
+  `send_local_files` are local-only; the hosted server does not offer them.
 - The hosted policy is chosen on the consent page: `standard` (read and act) or `read` (nothing is sent or changed).
-- Local files are sent only from the folders in `EVOLUTION_MCP_FILE_ROOTS`, never from hidden paths, up to 100 MiB.
+- Local files are sent only from the folders in `EVOLUTION_MCP_FILE_ROOTS`, never from hidden paths, up to 100 MiB each
+  and 10 files or 300 MiB per call. A call that sends several messages (`send_local_files`, `forward_message`) counts
+  each message against the write limit.
 - Tokens, passwords and secrets are never returned: configuration reads show only whether a secret is set.
 - The server accepts an instance's own token only. The Evolution server's global API key is refused.
 

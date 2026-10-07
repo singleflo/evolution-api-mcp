@@ -135,7 +135,7 @@ async def send_template_message(
     if body_parameters is not None and components is not None:
         raise ToolExecutionError("Give body_parameters or components, not both. Nothing was sent.")
     conn, client = await context.resolve()
-    chat_jid = calls.chat(chat)
+    chat_jid = await calls.resolve_chat(client, conn, chat, purpose="send")
     number = sending.recipient(conn.identity, chat_jid)
     if components is not None:
         parts: list[dict[str, Any]] = components

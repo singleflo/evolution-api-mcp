@@ -116,7 +116,13 @@ def client_for(tenant: Tenant) -> EvolutionClient:
 
 
 def forget(subject: str) -> None:
-    """Drop every client cached for one tenant subject and schedule closing their connections."""
+    """Drop every client cached for one tenant subject and schedule closing their connections.
+
+    The subject's cached name directory is dropped too.
+    """
+    from evolution_api_mcp import directory  # imported here: directory reaches this module through context
+
+    directory.forget(subject)
     with _clients_lock:
         dropped = [_clients.pop(key) for key in [key for key in _clients if key[0] == subject]]
     for client in dropped:

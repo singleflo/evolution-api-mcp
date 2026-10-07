@@ -15,7 +15,7 @@ MAX_INLINE_IMAGE_BYTES = 4_194_304  # 4 MiB
 
 _UNSAFE_NAME_CHARS = re.compile(r'[\x00-\x1f\x7f/\\:*?"<>|]')
 _UNSAFE_ID_CHARS = re.compile(r"[^0-9A-Za-z_-]")
-_MAX_NAME_CHARS = 120
+MAX_NAME_CHARS = 120
 
 
 def _is_hidden_below(root: Path, target: Path) -> bool:
@@ -74,10 +74,15 @@ def media_kind(path: Path) -> tuple[str, Literal["image", "video", "audio", "doc
     return mimetype, "document"
 
 
+def _plain_name(name: str) -> str:
+    """`name` without directories, control or reserved characters; not yet cut to length."""
+    base = name.replace("\\", "/").rsplit("/", 1)[-1]
+    return _UNSAFE_NAME_CHARS.sub("_", base).strip()
+
+
 def safe_file_name(name: str) -> str:
     """Reduce `name` to a plain file name: no directories, no control or reserved characters, at most 120 chars."""
-    base = name.replace("\\", "/").rsplit("/", 1)[-1]
-    cleaned = _UNSAFE_NAME_CHARS.sub("_", base).strip()[:_MAX_NAME_CHARS]
+    cleaned = _plain_name(name)[:MAX_NAME_CHARS]
     if cleaned in ("", ".", ".."):
         return "file"
     return cleaned
@@ -89,3 +94,23 @@ def download_target(download_dir: Path, chat_jid: str, message_id: str, file_nam
     message_part = _UNSAFE_ID_CHARS.sub("_", message_id) or "message"
     name = file_name or f"media{mimetypes.guess_extension(mimetype) or ''}"
     return download_dir / f"{chat_part}_{message_part}_{safe_file_name(name)}"
+
+
+def export_file_name(stamp: str, message_id: str, file_name: str | None, kind: str, mimetype: str) -> str:
+    """Name of an exported attachment: `<stamp>_<message id>_<name>`; a long name is cut before its extension.
+
+    A message without a stored file name is called after its type and the extension of its mimetype.
+    """
+    prefix = f"{stamp}_{_UNSAFE_ID_CHARS.sub('_', message_id) or 'message'}_"
+    original = _plain_name(file_name) if file_name else ""
+    if original in ("", ".", ".."):
+        original = f"{kind}{mimetypes.guess_extension(mimetype.split(';', 1)[0].strip()) or ''}"
+    suffix = Path(original).suffix[:16]
+    stem = original[: len(original) - len(suffix)][: max(1, MAX_NAME_CHARS - len(prefix) - len(suffix))]
+    return safe_file_name(prefix + stem + suffix)
+
+
+def export_folder_name(label: str, since: str, until: str) -> str:
+    """Folder of a chat export: `<chat label>_<first day>_<last day>`, with no directory separators."""
+    plain = label.replace("/", "_").replace("\\", "_")[:60]
+    return safe_file_name(f"{plain}_{since}_{until}")

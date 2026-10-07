@@ -31,8 +31,8 @@ from evolution_api_mcp.client import (
     EvolutionUnreachable,
 )
 
-MAX_RESULT_CHARS = 10_000
-TRUNCATION_NOTICE = "\n… cut at 10000 characters: ask for fewer items (limit) or a narrower time range."
+MAX_RESULT_CHARS = 30_000
+TRUNCATION_NOTICE = "\n… cut at 30000 characters: ask for fewer items (limit) or a narrower time range."
 
 # Baileys wraps delivery timeouts and socket resets in HTTP 400; those say nothing about whether
 # the message left, so they are handled like a 5xx.

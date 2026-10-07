@@ -67,9 +67,9 @@ Fill in public listing details from `docs/listing/README.md`:
 - Authorise the scan with the reviewer connection: policy `standard`, every toolset ticked, an instance whose integration is `WHATSAPP-BUSINESS`. The server lists tools per connection, and only that connection shows all of them.
 - Click **Scan Tools**.
   - The scan snapshots the server's tool metadata.
-  - Snapshot contents: 38 tools (`get_instance_status`, `react_to_message`, `send_button_message`, `send_contact_card`, `send_list_message`, `send_location`, `send_media_message`, `send_text_message`, `send_voice_note`, `download_message_media`, `get_chat`, `get_message`, `get_message_status`, `list_chats`, `read_messages`, `search_messages`, `view_message_image`, `find_contacts`, `create_template`, `edit_template`, `list_templates`, `send_template_message`, `get_instance_settings`, `get_proxy`, `update_instance_settings`, `get_event_channel`, `get_webhook`, `change_chatbot_session`, `get_chatbot`, `get_chatbot_settings`, `get_chatwoot_config`, `list_chatbot_sessions`, `list_chatbots`, `list_openai_credentials`, `list_openai_models`, `set_chatbot_ignored_chat`, `start_typebot_session`, `update_chatbot_settings`), along with their `title`, `description`, `inputSchema`, `readOnlyHint`, `destructiveHint`, and `openWorldHint` (refer to dossier section `Tool annotations`).
+  - Snapshot contents: 41 tools (`get_instance_status`, `forward_message`, `react_to_message`, `send_button_message`, `send_contact_card`, `send_list_message`, `send_location`, `send_media_message`, `send_text_message`, `send_voice_note`, `download_message_media`, `export_chat`, `get_chat`, `get_message`, `get_message_status`, `list_chats`, `list_recent_messages`, `read_messages`, `search_messages`, `view_message_image`, `find_chats`, `create_template`, `edit_template`, `list_templates`, `send_template_message`, `get_instance_settings`, `get_proxy`, `update_instance_settings`, `get_event_channel`, `get_webhook`, `change_chatbot_session`, `get_chatbot`, `get_chatbot_settings`, `get_chatwoot_config`, `list_chatbot_sessions`, `list_chatbots`, `list_openai_credentials`, `list_openai_models`, `set_chatbot_ignored_chat`, `start_typebot_session`, `update_chatbot_settings`), along with their `title`, `description`, `inputSchema`, `readOnlyHint`, `destructiveHint`, and `openWorldHint` (refer to dossier section `Tool annotations`).
   - Every annotation is an explicit boolean: OpenAI's guidelines require `readOnlyHint`, `destructiveHint` and `openWorldHint` to be set true or false, and treat sending messages that cannot be undone as destructive.
-- The guidelines retrieved on 2026-09-29 state that annotation justifications are no longer required; earlier portal versions asked for one written justification per annotation. **Confirm on submission day** whether the portal asks. If it does, the dossier's `Tool annotations` table carries the `readOnlyHint` and `destructiveHint` reasoning in its `Why` column, row by row; the `openWorldHint` justification is stated once above the table, because it is the same sentence for all 38 — every tool acts on the user's own Evolution API server and, through it, on WhatsApp conversations with other people.
+- The guidelines retrieved on 2026-09-29 state that annotation justifications are no longer required; earlier portal versions asked for one written justification per annotation. **Confirm on submission day** whether the portal asks. If it does, the dossier's `Tool annotations` table carries the `readOnlyHint` and `destructiveHint` reasoning in its `Why` column, row by row; the `openWorldHint` justification is stated once above the table, because it is the same sentence for all 41 — every tool acts on the user's own Evolution API server and, through it, on WhatsApp conversations with other people.
 - The tool list is not frozen at approval: OpenAI scans the hosted server daily, and a new tool passes automated checks before it becomes available, so a tool added later does not need a new plugin version but is reviewed.
 
 ### 3. Prompts Tab
@@ -130,7 +130,7 @@ Sign-in steps:
    act"). Test case 5 sends a message, and the read-only choice refuses it by
    design.
 4. Under "Which toolsets to enable" tick every box (three are ticked when the
-   page opens), so the scan and the cases see all 38 tools.
+   page opens), so the scan and the cases see all 41 tools.
 5. Press Connect. There is no MFA, no SMS, no email confirmation and no
    private network: the token authenticates on its own.
 
@@ -146,11 +146,11 @@ Behaviour to expect rather than report as a fault:
 
 #### Positive test cases
 
-1. **Unread chats** — prompt `Which chats have unread messages, and what do they ask?` → `list_chats` with `only_unread`, then `read_messages` on each chat returned → a short list with name, unread count and preview, then what the unread messages ask; an explicit statement when none are unread.
-2. **Recent history with one customer** — prompt `Show me the last ten messages in my chat with the test customer.` → `read_messages` with `limit` 10 (after `find_contacts` or `list_chats` to resolve the chat) → ten messages newest first with sender, timestamp, type and text, both directions.
+1. **Unread chats** — prompt `Which chats have unread messages, and what do they ask?` → `list_recent_messages` with `only_unread` true → each chat with unread messages, its name, unread count and newest unread messages, then what they ask; an explicit statement when none are unread.
+2. **Recent history with one customer** — prompt `Show me the last ten messages in my chat with the test customer.` → `read_messages` with `limit` 10 and the customer's name as `chat` → ten messages newest first with sender, timestamp, type and text, both directions.
 3. **Search by word** — prompt `Search my messages for the word invoice and summarize what you find.` → `search_messages` with `query` invoice → the matching messages with chat, sender and timestamp and a summary, plus how many messages were scanned.
 4. **Approved templates** — prompt `Which message templates are approved, and in which languages?` → `list_templates` with `status` APPROVED → the approved templates with name, language and category.
-5. **A reply inside the 24-hour window** — prompt `Send the test customer the message "Thanks, we received your order."` → `send_text_message` on the customer's chat, optionally `get_message_status` → a confirmation with message id, chat id, status and timestamp; the status reaches at least SERVER_ACK.
+5. **A reply inside the 24-hour window** — prompt `Send the test customer the message "Thanks, we received your order."` → `send_text_message` with the customer's name as `chat`, optionally `get_message_status` → a confirmation with message id, chat id, status and timestamp; the status reaches at least SERVER_ACK.
 
 #### Negative test cases
 
@@ -185,4 +185,4 @@ Remote MCP plugins publish a snapshot of reviewed server metadata. If you rename
 - https://developers.openai.com/plugins/deploy/submission
 - https://developers.openai.com/plugins/deploy/app-review
 - https://developers.openai.com/plugins/plugin-guidelines
-- https://developers.openai.com/api/docs/guides/developer-mode
+- https://developers.openai.com/plugins/deploy/connect-chatgpt

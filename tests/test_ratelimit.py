@@ -113,3 +113,51 @@ def test_reset_clears_every_window(make_connection, clock):
     ratelimit.check(WRITE, conn)
     ratelimit.reset()
     ratelimit.check(WRITE, conn)
+
+
+def test_charge_records_the_extra_messages_of_one_call_against_the_write_window(make_connection, clock):
+    conn = make_connection(max_writes_per_minute=5)
+    ratelimit.check(WRITE, conn)
+    ratelimit.charge(conn, writes=3)
+    ratelimit.check(WRITE, conn)
+    with pytest.raises(ToolExecutionError, match="at most 5 changes per minute"):
+        ratelimit.check(WRITE, conn)
+
+
+def test_charge_refuses_when_the_messages_do_not_fit_and_records_nothing(make_connection, clock):
+    conn = make_connection(max_writes_per_minute=4)
+    ratelimit.check(WRITE, conn)
+    clock.now += 10
+    with pytest.raises(ToolExecutionError) as excinfo:
+        ratelimit.charge(conn, writes=4)
+    # The refusal is the same one `check` gives; the oldest change leaves the window in 50 more seconds.
+    assert str(excinfo.value) == (
+        "Rate limit reached: at most 4 changes per minute on this connection. Try again in 50 seconds."
+    )
+    ratelimit.charge(conn, writes=3)  # nothing was recorded by the refused charge
+
+
+def test_charge_slides_with_the_window(make_connection, clock):
+    conn = make_connection(max_writes_per_minute=3)
+    ratelimit.check(WRITE, conn)
+    ratelimit.charge(conn, writes=2)
+    with pytest.raises(ToolExecutionError):
+        ratelimit.charge(conn, writes=1)
+    clock.now += 60
+    ratelimit.charge(conn, writes=3)
+
+
+def test_charge_is_off_when_the_limit_is_zero_and_ignores_a_single_message(make_connection, clock):
+    ratelimit.charge(make_connection(max_writes_per_minute=0), writes=500)
+    conn = make_connection(max_writes_per_minute=1)
+    ratelimit.charge(conn, writes=0)
+    ratelimit.check(WRITE, conn)
+
+
+def test_charge_counts_per_tenant(make_connection, clock):
+    first = make_connection(mode="hosted", subject="t_one", max_writes_per_minute=2)
+    second = make_connection(mode="hosted", subject="t_two", max_writes_per_minute=2)
+    ratelimit.charge(first, writes=2)
+    ratelimit.charge(second, writes=2)
+    with pytest.raises(ToolExecutionError):
+        ratelimit.charge(first, writes=1)

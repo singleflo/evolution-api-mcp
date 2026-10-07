@@ -45,3 +45,27 @@ def check(spec: ToolSpec, conn: Connection) -> None:
                 f"connection. Try again in {seconds} seconds."
             )
         window.append(now)
+
+
+def charge(conn: Connection, *, writes: int) -> None:
+    """Record `writes` more changes on `conn` (a call that sends several messages), or raise when they do not fit.
+
+    `check` has already recorded the call itself; a tool that delivers N messages charges the other N - 1 here, before
+    the first one leaves. A limit of 0 turns the limit off.
+    """
+    limit = conn.max_writes_per_minute
+    if limit <= 0 or writes <= 0:
+        return
+    key = (conn.subject or "local", "write")
+    with _lock:
+        now = time.monotonic()
+        window = _windows.setdefault(key, deque())
+        while window and now - window[0] >= WINDOW_SECONDS:
+            window.popleft()
+        if len(window) + writes > limit:
+            seconds = max(1, math.ceil(window[0] + WINDOW_SECONDS - now)) if window else 1
+            raise ToolExecutionError(
+                f"Rate limit reached: at most {limit} changes per minute on this connection. "
+                f"Try again in {seconds} seconds."
+            )
+        window.extend([now] * writes)

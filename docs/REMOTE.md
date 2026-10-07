@@ -114,8 +114,8 @@ npx @modelcontextprotocol/inspector --cli http://127.0.0.1:8000/mcp \
 ```
 
 The JSON wraps the tools as `{"result":{"tools":[…]}}`. Each carries a `title` and the four annotation hints. A
-`standard` connection with every toolset on a `WHATSAPP-BUSINESS` instance sees 38 tools; a `read` connection sees only
-the tools that read (21 on that instance).
+`standard` connection with every toolset on a `WHATSAPP-BUSINESS` instance sees 41 tools; a `read` connection sees only
+the tools that read (22 on that instance).
 
 Two Inspector CLI traps:
 
@@ -192,8 +192,8 @@ at the deployed server; for a tunnel, substitute the tunnel URL.
 
 * **Claude.ai**: Customize → Connectors → Add custom connector, URL `https://evolution-mcp.singleflo.com/mcp`; the
   first use lands on the consent page.
-* **ChatGPT**: Settings → Security and login → Developer mode, then create a developer-mode app at chatgpt.com/plugins
-  for the same URL.
+* **ChatGPT**: chatgpt.com/plugins → plus button → Add custom MCP server, enter `https://evolution-mcp.singleflo.com/mcp`
+  under Connection, then **Create as a plugin**.
 * **Claude Code**: `claude mcp add --transport http evolution-api-mcp https://evolution-mcp.singleflo.com/mcp`
 * **Codex**: `codex mcp add evolution-api-mcp --url https://evolution-mcp.singleflo.com/mcp` then
   `codex mcp login evolution-api-mcp`
@@ -212,13 +212,14 @@ admits reads and writes, still under the default deny list (`post_status`, `remo
 webhook, event-channel, proxy and Chatwoot configuration tools). Tools that cannot be undone (`logout_instance`,
 `delete_message_for_everyone`, `leave_group`, deleting templates, chatbots and OpenAI credentials) are never
 available on the hosted server under either choice, and the eight local-only tools (the ones that take secrets as
-input, plus `send_local_file`) are not registered on it at all. Writes are limited to 30 per minute and reads to 120
+input, plus `send_local_files`) are not registered on it at all. Writes are limited to 30 per minute and reads to 120
 per minute for each connection, and sends default to a 1200 ms typing delay.
 
 Media a tool downloads never comes back as a blob. `download_message_media` moves the file under the tenant's files
 area and answers with a link `…/files/<token>` that serves the bytes for **fifteen minutes**; the token is the
 credential, an expired link answers 404 and deletes the file, and the response carries `Cache-Control: private,
-no-store` so no shared cache keeps a customer's attachment.
+no-store` so no shared cache keeps a customer's attachment. `export_chat` works the same way: it builds the export in
+a temporary folder, zips it (at most 100 MiB), moves the ZIP under the files area and answers with such a link.
 
 The retention sweep runs at startup and then every hour (`SWEEP_SECONDS` in `remote/app.py`): expired OAuth rows,
 expired file links, and tenants idle for 90 days without a live token together with their files. Disconnecting the
@@ -274,7 +275,7 @@ human step; the guides walk it, the agents stop at preparing everything up to th
 * https://claude.com/docs/connectors/custom/remote-mcp
 * https://claude.com/docs/connectors/building/directory-vs-custom
 * https://claude.com/docs/connectors/building/testing
-* https://developers.openai.com/api/docs/guides/developer-mode
+* https://developers.openai.com/plugins/deploy/connect-chatgpt
 * https://developers.openai.com/codex/cli/reference
 * https://code.claude.com/docs/en/mcp
 * https://modelcontextprotocol.io/registry/remote-servers

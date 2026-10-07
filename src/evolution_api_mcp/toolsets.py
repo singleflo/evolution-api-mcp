@@ -23,9 +23,12 @@ TOOLSETS: dict[str, str] = {
         "react, edit and delete sent messages."
     ),
     "chats": (
-        "List chats, read and search message history, delivery status, read/unread and archive state, received media."
+        "List chats, show the newest messages across chats, read and search message history, delivery status, "
+        "read/unread and archive state, received media."
     ),
-    "contacts": "Find contacts, check numbers on WhatsApp, profiles and profile pictures, block and unblock.",
+    "contacts": (
+        "Find chats by name or number, check numbers on WhatsApp, profiles and profile pictures, block and unblock."
+    ),
     "groups": "Group details, participants, invite links, creation, settings and membership.",
     "labels": "WhatsApp Business app labels on chats.",
     "profile": "The instance's own profile name, about text, picture and privacy settings.",

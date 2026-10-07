@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from evolution_api_mcp import calls, context, jid, registry
+from evolution_api_mcp import calls, context, registry
 from evolution_api_mcp.client import EvolutionHTTPError
 from evolution_api_mcp.errors import ToolExecutionError, tool_result
 from evolution_api_mcp.tools.contacts import compact
@@ -89,11 +89,7 @@ async def post_status(
     recipients: list[str] = []
     if audience is not None:
         for value in audience:
-            chat_jid = calls.chat(value)
-            if jid.phone_of(chat_jid) is None:
-                raise ToolExecutionError(
-                    f"{value} is not a phone number; the status audience takes international phone numbers."
-                )
+            chat_jid, _ = await calls.resolve_person(client, conn, value, purpose="send")
             if chat_jid not in recipients:
                 recipients.append(chat_jid)
         # Evolution hands this list to WhatsApp unchanged, and WhatsApp addresses people by full JID.

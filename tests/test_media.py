@@ -163,3 +163,29 @@ def test_download_target_cannot_escape_the_download_dir(tmp_path):
     target = media.download_target(tmp_path, "393331234567@s.whatsapp.net", "../../evil", "../../x.txt", "text/plain")
     assert target.parent == tmp_path
     assert "/" not in target.name
+
+
+def test_export_file_name_prefixes_the_stamp_and_message_id():
+    name = media.export_file_name("20260701-120130", "3EB0ABCDEF", "Report 1.pdf", "document", "application/pdf")
+    assert name == "20260701-120130_3EB0ABCDEF_Report 1.pdf"
+
+
+def test_export_file_name_without_a_stored_name_uses_the_type_and_the_mimetype_extension():
+    assert media.export_file_name("S", "id", None, "voice_note", "audio/ogg; codecs=opus").startswith(
+        "S_id_voice_note."
+    )
+    assert media.export_file_name("S", "id", None, "document", "application/x-unknown-thing") == "S_id_document"
+
+
+def test_export_file_name_cannot_escape_and_keeps_the_extension_of_a_long_name():
+    plain = media.export_file_name("S", "../../evil", "../../x.txt", "document", "text/plain")
+    assert plain == "S_______evil_x.txt"
+    long = media.export_file_name("20260701-120130", "3EB0ABCDEF", "a" * 300 + ".pdf", "document", "application/pdf")
+    assert len(long) == media.MAX_NAME_CHARS
+    assert long.startswith("20260701-120130_3EB0ABCDEF_aaa")
+    assert long.endswith("a.pdf")
+
+
+def test_export_folder_name_has_no_separators_and_a_short_label():
+    assert media.export_folder_name("Mom/Dad: \\trip", "2026-07-01", "now") == "Mom_Dad_ _trip_2026-07-01_now"
+    assert media.export_folder_name("x" * 100, "start", "now") == "x" * 60 + "_start_now"

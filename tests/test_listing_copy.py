@@ -215,7 +215,7 @@ async def test_annotation_table_matches_the_live_wire_annotations():
             tool.annotations.destructive_hint,
             tool.annotations.open_world_hint,
         )
-    assert len(live) == 38
+    assert len(live) == 41
     assert set(live) == {spec.name for spec in _visible_specs()}, "the wire listing and policy.visible disagree"
     assert set(table) == set(live), "table rows and live tools disagree on names"
     assert table == live, "the dossier's annotation table has drifted from the live annotations:\n" + "\n".join(

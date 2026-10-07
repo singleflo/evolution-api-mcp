@@ -19,7 +19,7 @@ from contextlib import contextmanager
 import pytest
 
 from evolution_api_mcp import client as evolution_client
-from evolution_api_mcp import context, ratelimit, registry, tools, toolsets
+from evolution_api_mcp import context, directory, ratelimit, registry, tools, toolsets
 from tests.fakes import FakeEvolution
 
 Connection = context.Connection
@@ -38,11 +38,13 @@ def anyio_backend() -> str:
 
 @pytest.fixture(autouse=True)
 def _isolated_runtime() -> Iterator[None]:
-    """Every test starts and ends with empty rate-limit windows and every tool module imported."""
+    """Every test starts and ends with empty rate-limit windows and name directory and every tool module imported."""
     tools.load_all()
     ratelimit.reset()
+    directory.reset()
     yield
     ratelimit.reset()
+    directory.reset()
 
 
 @pytest.fixture
@@ -79,6 +81,7 @@ def make_connection(make_identity: Callable[..., InstanceIdentity]) -> Callable[
             "default_delay_ms": 0,
             "max_writes_per_minute": 0,
             "max_reads_per_minute": 0,
+            "timezone": "UTC",
         }
         unknown = set(overrides) - set(defaults)
         if unknown:

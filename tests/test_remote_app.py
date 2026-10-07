@@ -480,7 +480,7 @@ def test_the_landing_promises_exactly_the_tools_a_business_connection_gets(tmp_p
     with make_client(tmp_path) as client:
         page = client.get("/")
 
-    assert "Up to 38 tools" in page.text
+    assert "Up to 41 tools" in page.text
     assert "WHATSAPP-BUSINESS" in page.text
     assert "uvx evolution-api-mcp" in page.text
     # A toolset the Business integration has no tool for is not advertised.
@@ -493,7 +493,7 @@ def test_a_widened_deployment_advertises_the_wider_surface(tmp_path):
         page = client.get("/")
 
     assert "<strong>groups</strong>" in page.text
-    assert "Up to 38 tools" not in page.text
+    assert "Up to 41 tools" not in page.text
 
 
 def test_every_page_is_built_for_a_phone_and_refuses_framing(tmp_path):
@@ -684,13 +684,13 @@ def test_a_token_whose_tenant_row_is_deleted_answers_401(tmp_path):
 
 
 # --------------------------------------------------------- what a tenant sees
-def test_a_standard_business_tenant_with_every_toolset_sees_exactly_the_38_store_tools(tmp_path):
+def test_a_standard_business_tenant_with_every_toolset_sees_exactly_the_39_store_tools(tmp_path):
     settings = make_settings(tmp_path)
     with TestClient(build_app(settings), base_url=PUBLIC_URL, follow_redirects=False) as client:
         token = _full_token(client, settings, make_tenant("t_a"))
         names = _listed(client, token)
 
-    assert len(names) == 38
+    assert len(names) == 41
     specs = {spec.name: spec for spec in registry.specs()}
     assert {"list_chats", "read_messages", "search_messages", "list_templates", "send_text_message"} <= names
     for name in names:

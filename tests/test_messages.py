@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from evolution_api_mcp import messages
+from evolution_api_mcp import directory, messages
 from evolution_api_mcp.client import EvolutionClient
 from evolution_api_mcp.context import InstanceIdentity
 from tests.conftest import BASE, TOKEN
@@ -188,7 +188,8 @@ def test_project_extended_text_with_quote_from_context_info() -> None:
         )
     )
     assert projected["text"] == "Sure"
-    assert projected["quoted_message_id"] == "QUOTED01"
+    assert projected["quoted"] == {"message_id": "QUOTED01", "sender": CHAT}
+    assert "quoted_message_id" not in projected
     assert projected["status"] == "SERVER_ACK"
 
 
@@ -361,6 +362,235 @@ def test_project_tolerates_a_bare_row() -> None:
     assert messages.project_message({}) == {"type": "other"}
 
 
+# ---- projection v2: names, quotes, deletion, forwarding, mentions ----------------------------------------------
+
+OTHER = "391110001111@s.whatsapp.net"
+THIRD = "391110002222@s.whatsapp.net"
+LID = "99887766@lid"
+ME = "393930000000@s.whatsapp.net"
+
+
+def known(*entries: tuple[str, str | None], me: tuple[str, ...] = ()) -> directory.Directory:
+    names = directory.Directory(me=frozenset(me))
+    for chat_id, name in entries:
+        kind = "group" if chat_id.endswith("@g.us") else "person"
+        names.entries[chat_id] = directory.Entry(chat_id, name, kind, None, True)
+    return names
+
+
+@pytest.mark.parametrize(
+    ("chat_id", "expected"),
+    [
+        ("status@broadcast", True),
+        ("0@s.whatsapp.net", True),
+        ("120363@newsletter", True),
+        ("12345@broadcast", True),
+        (CHAT, False),
+        (GROUP, False),
+        (LID, False),
+        (None, False),
+    ],
+)
+def test_is_noise_chat(chat_id: str | None, expected: bool) -> None:
+    assert messages.is_noise_chat(chat_id) is expected
+
+
+def test_chat_name_is_shown_only_when_asked_for() -> None:
+    names = known((CHAT, "Marta Rossi"))
+    plain = messages.project_message(row("conversation", {"conversation": "hi"}), names=names)
+    named = messages.project_message(row("conversation", {"conversation": "hi"}), names=names, include_chat_name=True)
+    assert "chat_name" not in plain
+    assert named["chat_name"] == "Marta Rossi"
+    unnamed = messages.project_message(row("conversation", {"conversation": "hi"}), include_chat_name=True)
+    assert "chat_name" not in unnamed
+
+
+def test_sender_name_falls_back_to_the_directory_but_push_name_wins() -> None:
+    names = known((CHAT, "Marta Rossi"), (GROUP, "Family"), (OTHER, "Ana"))
+    no_push = messages.project_message(row("conversation", {"conversation": "hi"}, pushName=""), names=names)
+    assert no_push["sender_name"] == "Marta Rossi"
+    with_push = messages.project_message(row("conversation", {"conversation": "hi"}), names=names)
+    assert with_push["sender_name"] == "Marta"
+    mine = messages.project_message(row("conversation", {"conversation": "hi"}, from_me=True, pushName=""), names=names)
+    assert "sender_name" not in mine
+    assert "sender_name" not in messages.project_message(row("conversation", {"conversation": "hi"}, pushName=""))
+
+    in_group = row("conversation", {"conversation": "yo"}, chat=GROUP, pushName="")
+    in_group["key"]["participant"] = OTHER
+    assert messages.project_message(in_group, names=names)["sender_name"] == "Ana"
+
+    unknown_participant = row("conversation", {"conversation": "yo"}, chat=GROUP, pushName="")
+    assert "sender_name" not in messages.project_message(unknown_participant, names=names)  # the sender is the group
+
+
+def test_sender_phone_is_shown_for_a_known_lid_sender() -> None:
+    names = known()
+    names.lid_phone[LID] = "393331234567"
+    lid_row = row("conversation", {"conversation": "yo"}, chat=GROUP, pushName="")
+    lid_row["key"]["participant"] = LID
+    assert messages.project_message(lid_row, names=names)["sender_phone"] == "393331234567"
+    assert "sender_phone" not in messages.project_message(lid_row)
+    assert "sender_phone" not in messages.project_message(lid_row, names=known())
+    phone_row = row("conversation", {"conversation": "yo"}, chat=GROUP)
+    phone_row["key"]["participant"] = OTHER
+    assert "sender_phone" not in messages.project_message(phone_row, names=names)
+
+
+def test_quoted_carries_sender_and_text_cut_at_200_characters() -> None:
+    names = known((OTHER, "Ana"))
+    quoting = row(
+        "extendedTextMessage",
+        {"extendedTextMessage": {"text": "Sure"}},
+        contextInfo={
+            "stanzaId": "QUOTED01",
+            "participant": OTHER,
+            "quotedMessage": {"conversation": "q" * 300},
+        },
+    )
+    assert messages.project_message(quoting, names=names)["quoted"] == {
+        "message_id": "QUOTED01",
+        "sender": "Ana",
+        "text": "q" * 200,
+    }
+    assert messages.project_message(quoting)["quoted"]["sender"] == OTHER
+    bare = row("conversation", {"conversation": "x"}, contextInfo={"stanzaId": "QUOTED02"})
+    assert messages.project_message(bare)["quoted"] == {"message_id": "QUOTED02"}
+    assert "quoted" not in messages.project_message(row("conversation", {"conversation": "x"}, contextInfo={}))
+
+
+def test_deleted_message_drops_its_content() -> None:
+    image = row(
+        "imageMessage",
+        {"imageMessage": {"caption": "secret", "mimetype": "image/jpeg", "fileLength": 10}},
+        status="DELETED",
+    )
+    projected = messages.project_message(image)
+    assert projected["deleted"] is True
+    assert projected["type"] == "image"
+    assert not {"text", "media"} & projected.keys()
+    assert "secret" not in str(projected)
+
+
+def test_a_key_marked_deleted_is_deleted() -> None:
+    stored = row("conversation", {"conversation": "oops"})
+    stored["key"]["deleted"] = True
+    projected = messages.project_message(stored)
+    assert projected["deleted"] is True
+    assert "text" not in projected
+    assert "deleted" not in messages.project_message(row("conversation", {"conversation": "fine"}))
+
+
+@pytest.mark.parametrize(
+    ("context", "expected"),
+    [
+        ({"isForwarded": True}, True),
+        ({"forwardingScore": 2}, True),
+        ({"forwardingScore": 0}, False),
+        ({"forwardingScore": True}, False),
+        ({"isForwarded": False}, False),
+        ({}, False),
+    ],
+)
+def test_forwarded_flag(context: dict, expected: bool) -> None:
+    projected = messages.project_message(row("conversation", {"conversation": "fwd"}, contextInfo=context))
+    assert projected.get("forwarded", False) is expected
+
+
+def test_mentions_are_names_then_phones_then_jids_and_flag_this_number() -> None:
+    names = known((OTHER, "Ana"), me=(ME,))
+    mentioning = row(
+        "extendedTextMessage",
+        {"extendedTextMessage": {"text": "@Ana @x @y"}},
+        chat=GROUP,
+        contextInfo={"mentionedJid": [OTHER, THIRD, "55667788@lid", ME]},
+    )
+    projected = messages.project_message(mentioning, names=names)
+    assert projected["mentions"] == ["Ana", "391110002222", "55667788@lid", "393930000000"]
+    assert projected["mentions_me"] is True
+
+    without_names = messages.project_message(mentioning)
+    assert without_names["mentions"] == ["391110001111", "391110002222", "55667788@lid", "393930000000"]
+    assert "mentions_me" not in without_names
+
+    others_only = row("conversation", {"conversation": "hi"}, contextInfo={"mentionedJid": [OTHER]})
+    assert "mentions_me" not in messages.project_message(others_only, names=names)
+    assert "mentions" not in messages.project_message(row("conversation", {"conversation": "hi"}))
+
+
+def test_a_mention_addressed_to_this_numbers_lid_is_recognised() -> None:
+    names = known(me=(ME,))
+    names.lid_phone[LID] = "393930000000"
+    mentioning = row("conversation", {"conversation": "@me"}, contextInfo={"mentionedJid": [LID]})
+    projected = messages.project_message(mentioning, names=names)
+    assert projected["mentions_me"] is True
+    assert projected["mentions"] == ["393930000000"]
+
+
+# ---- project_rows: folding reactions --------------------------------------------------------------------------
+
+
+def group_row(
+    message_id: str,
+    message_type: str,
+    message: dict,
+    *,
+    who: str | None = OTHER,
+    from_me: bool = False,
+    ts: int = 1_700_000_000,
+) -> dict:
+    key: dict = {"id": message_id, "remoteJid": GROUP, "fromMe": from_me}
+    if who:
+        key["participant"] = who
+    return {"key": key, "messageType": message_type, "message": message, "messageTimestamp": ts}
+
+
+def reaction(
+    message_id: str, target: str, emoji: str, *, who: str | None = OTHER, from_me: bool = False, ts: int
+) -> dict:
+    payload = {"reactionMessage": {"text": emoji, "key": {"id": target, "remoteJid": GROUP}}}
+    return group_row(message_id, "reactionMessage", payload, who=who, from_me=from_me, ts=ts)
+
+
+def test_reactions_fold_into_their_target_and_their_rows_disappear() -> None:
+    names = known((OTHER, "Ana"))
+    target = group_row("T1", "conversation", {"conversation": "lunch?"}, who=THIRD, ts=50)
+    rows = [
+        target,
+        reaction("R1", "T1", "👍", ts=100),
+        reaction("R2", "T1", "🎉", ts=200),  # Ana changed her mind: only the newest counts
+        reaction("R3", "T1", "❤️", who=None, from_me=True, ts=150),
+        reaction("R4", "T1", "", who=THIRD, ts=120),  # an empty emoji removes a reaction: nothing to show
+        reaction("R5", "OUTSIDE", "😮", ts=300),  # its target is not in the list: stays a row
+        None,
+    ]
+    projected = messages.project_rows(rows, names=names)
+    assert [item["message_id"] for item in projected] == ["T1", "R5"]
+    assert projected[0]["reactions"] == [{"emoji": "🎉", "by": "Ana"}, {"emoji": "❤️", "by": "me"}]
+    assert projected[1]["type"] == "reaction"
+    assert projected[1]["reaction"] == {"emoji": "😮", "target_message_id": "OUTSIDE"}
+
+
+def test_a_removed_reaction_shows_nothing_whatever_the_row_order() -> None:
+    target = group_row("T1", "conversation", {"conversation": "lunch?"}, who=THIRD, ts=50)
+    added = reaction("R1", "T1", "👍", ts=100)
+    removed = reaction("R2", "T1", "", ts=200)
+    newest_first = messages.project_rows([removed, added, target])
+    chronological = messages.project_rows([target, added, removed])
+    assert [item["message_id"] for item in newest_first] == ["T1"]
+    assert [item["message_id"] for item in chronological] == ["T1"]
+    assert "reactions" not in newest_first[0]
+    assert "reactions" not in chronological[0]
+
+
+def test_project_rows_passes_the_projection_options_through() -> None:
+    names = known((GROUP, "Family"))
+    rows = [group_row("T1", "conversation", {"conversation": "x" * 40}, ts=50)]
+    projected = messages.project_rows(rows, text_limit=10, names=names, include_chat_name=True)
+    assert projected[0]["chat_name"] == "Family"
+    assert projected[0]["text"] == "x" * 10
+    assert projected[0]["text_truncated"] is True
+
+
 # ---- Evolution calls ------------------------------------------------------------------------------------------
 
 
@@ -433,7 +663,7 @@ async def test_find_message_filters_by_id_and_chat_and_returns_the_row(
     await messages.find_message(client, identity, "MSG0001")
     assert evo.last("POST", "/chat/findMessages/inst").json == {
         "where": {"key": {"id": "MSG0001"}},
-        "offset": 1,
+        "offset": 2,
         "page": 1,
     }
 
@@ -444,6 +674,31 @@ async def test_find_message_missing_returns_none(
 ) -> None:
     evo.on("POST", "/chat/findMessages/inst", json=find_messages_answer([], total=0, pages=0, current=1))
     assert await messages.find_message(client, identity, "NOPE0001", CHAT) is None
+
+
+@pytest.mark.anyio
+async def test_find_message_without_a_chat_refuses_an_id_shared_by_several_chats(
+    evo: FakeEvolution, client: EvolutionClient, identity: InstanceIdentity
+) -> None:
+    records = [row("conversation", {"conversation": "a"}), row("conversation", {"conversation": "b"}, chat=GROUP)]
+    evo.on("POST", "/chat/findMessages/inst", json=find_messages_answer(records, total=2, pages=1, current=1))
+
+    with pytest.raises(messages.AmbiguousMessageId) as caught:
+        await messages.find_message(client, identity, "MSG0001")
+    assert caught.value.chat_ids == [CHAT, GROUP]
+
+    # with a chat the page holds one row and nothing is ambiguous
+    assert await messages.find_message(client, identity, "MSG0001", CHAT) == records[0]
+    assert evo.last("POST", "/chat/findMessages/inst").json["offset"] == 1
+
+
+@pytest.mark.anyio
+async def test_find_message_returns_the_first_of_duplicate_rows_in_one_chat(
+    evo: FakeEvolution, client: EvolutionClient, identity: InstanceIdentity
+) -> None:
+    records = [row("conversation", {"conversation": "a"}), row("conversation", {"conversation": "a again"})]
+    evo.on("POST", "/chat/findMessages/inst", json=find_messages_answer(records, total=2, pages=1, current=1))
+    assert await messages.find_message(client, identity, "MSG0001") == records[0]
 
 
 @pytest.mark.anyio

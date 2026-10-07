@@ -11,7 +11,7 @@ First release. An MCP server that operates one Evolution API v2 instance (one Wh
 token, as a local stdio server and as a hosted Streamable HTTP server.
 
 ### Added
-- **97 tools in 13 toolsets** covering the per-instance surface of Evolution API: `instance`, `messaging`, `chats`,
+- **100 tools in 13 toolsets** covering the per-instance surface of Evolution API: `instance`, `messaging`, `chats`,
   `contacts`, `groups`, `labels`, `profile`, `status`, `catalog`, `templates`, `settings`, `events` and `integrations`.
   One tool per operation, reads and writes in separate tools, no generic "call any endpoint" tool. The generated
   catalog is `docs/TOOLS.md`.
@@ -29,10 +29,15 @@ token, as a local stdio server and as a hosted Streamable HTTP server.
 - **Sending.** Text, media from a URL, voice notes, video notes, stickers, locations, contact cards, polls, list and
   button messages, reactions, edits and deletion for everyone, with quoted replies, mentions, typing-indicator pacing
   (`EVOLUTION_MCP_DEFAULT_DELAY_MS`, default 1200 ms) and a per-minute write limit
-  (`EVOLUTION_MCP_MAX_WRITES_PER_MINUTE`, default 30). `send_local_file` sends files from configured folders on the local
-  server. WhatsApp Business Platform rejections, including the 24-hour window, are reported as refusals.
+  (`EVOLUTION_MCP_MAX_WRITES_PER_MINUTE`, default 30). `send_local_files` sends up to 10 files from configured folders on
+  the local server and `forward_message` re-sends a message to up to 5 chats; each message counts against the write
+  limit. WhatsApp Business Platform rejections, including the 24-hour window, are reported as refusals.
 - **Reading.** Chats, message history with a documented client-side text search, delivery status, images inline and media
   downloads (a file locally, a 15-minute link on the hosted server).
+- **Chat export.** `export_chat` saves a chat or a period of it as Markdown, JSON or WhatsApp-style text, with its
+  attachments: a folder under `exports/` of the download folder locally, a ZIP behind a 15-minute link when hosted.
+  Attachments are fetched four at a time and none starts after 90 seconds; what is left out is listed in
+  `media_skipped` with a reason, never with Evolution's signed download address.
 - **Errors in three outcomes.** Success; refused or failed with "Nothing was changed" or "Nothing was sent"; and
   UNCERTAIN after a write that may have applied, which carries a re-read of the state and says not to repeat the call.
 - **Secrets stay out.** Configuration reads are redacted and show only whether a secret is set. The eight tools whose

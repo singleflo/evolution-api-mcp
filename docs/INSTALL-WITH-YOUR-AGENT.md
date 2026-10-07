@@ -34,11 +34,23 @@ of these exist:
 | Claude Code | the `claude` command on `PATH`, `~/.claude.json`, or `.mcp.json` in the project |
 | Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows) |
 | OpenAI Codex CLI | `~/.codex/config.toml` |
+| omp | the `omp` command on `PATH`, `~/.omp/agent/mcp.json`, or `.omp/mcp.json` in the project |
+| GitHub Copilot CLI | the `copilot` command on `PATH`, or `~/.copilot/mcp-config.json` |
+| Antigravity | `~/.gemini/config/mcp_config.json`, or `.agents/mcp_config.json` in the project |
+| Kiro | `~/.kiro/settings/mcp.json` or `.kiro/settings/mcp.json` |
+| Goose | `~/.config/goose/config.yaml` |
+| LM Studio | the LM Studio application; its `mcp.json` opens from the Program tab with Install → Edit mcp.json |
+| Kilo Code | `~/.config/kilo/kilo.jsonc` or `.kilo/kilo.jsonc` |
+| Continue | a `.continue/` folder in the project |
+| Qwen Code | `~/.qwen/settings.json` |
+| Amp | `~/.config/amp/settings.json` |
+| Warp | `~/.warp/.mcp.json` |
+| Factory Droid | `~/.factory/mcp.json` |
 | opencode | `~/.config/opencode/opencode.json` or `.jsonc`, or `opencode.json` in the project |
 | Hermes | `~/.hermes/config.yaml` |
 | Cursor | `~/.cursor/mcp.json` or `.cursor/mcp.json` |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
-| VS Code / GitHub Copilot | `.vscode/mcp.json` |
+| Windsurf (Devin Desktop) | `~/.config/devin/mcp_config.json` (Windows: `%APPDATA%\devin\mcp_config.json`), or `~/.codeium/windsurf/mcp_config.json` |
+| VS Code / GitHub Copilot | `.mcp.json` or `.vscode/mcp.json` in the project, or `~/.copilot/mcp-config.json` |
 | Gemini CLI | `~/.gemini/settings.json` |
 | Zed | `~/.config/zed/settings.json`; if it is not there, have them open it from the Command Palette with `zed: open settings file` |
 
@@ -67,13 +79,16 @@ after it, not the one you are in.
 
 ## 3. Write the host configuration
 
-Thirteen hosts have a local snippet in the README, each checked against that host's own documentation:
+Twenty-four hosts have a local snippet in the README, each checked against that host's own documentation:
 [Host Configuration Examples](https://github.com/singleflo/evolution-api-mcp/blob/main/README.md#host-configuration-examples).
-Anchors follow the heading, lowercased and hyphenated: `#openai-codex-cli`, `#hermes`, `#cursor`, `#windsurf`,
-`#vs-code-and-github-copilot`, `#gemini-cli`, `#cline`, `#roo-code`, `#zed`, `#jetbrains-ai-assistant`. Read the section
-before you write: the shapes differ in ways the hosts reject outright. Zed's key is `context_servers`, VS Code's is
-`servers`, opencode's is `mcp`, and Hermes needs an absolute path to `uvx`. Merge into the existing file rather than
-overwriting it, because they usually have other servers configured already. The three most common hosts, in full:
+Anchors follow the heading, lowercased and hyphenated: `#omp-oh-my-pi`, `#github-copilot-cli`, `#antigravity`,
+`#kiro-ide-cli`, `#goose`, `#lm-studio`, `#kilo-code`, `#continue`, `#qwen-code`, `#amp`, `#warp`, `#factory-droid`,
+`#openai-codex-cli`, `#hermes`, `#cursor`, `#windsurf-devin-desktop`, `#vs-code-and-github-copilot`, `#gemini-cli`,
+`#cline`, `#zed`, `#jetbrains-ai-assistant`. Read the section before you write: the shapes differ in ways the hosts
+reject outright. Zed's key is `context_servers`, VS Code's `.vscode/mcp.json` uses `servers` while its `.mcp.json` uses
+`mcpServers`, opencode's and Kilo Code's is `mcp`, Amp's is `amp.mcpServers`, Goose and Continue use YAML, and Hermes
+needs an absolute path to `uvx`. Merge into the existing file rather than overwriting it, because they usually have
+other servers configured already. The three most common hosts, in full:
 
 **[Claude Desktop](https://github.com/singleflo/evolution-api-mcp/blob/main/README.md#claude-desktop)** —
 `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS,
@@ -175,7 +190,10 @@ If a call times out, raise the host's timeout; the key differs per host, and the
 - Claude Code: `timeout`, milliseconds, per server.
 - Codex CLI: `startup_timeout_sec` and `tool_timeout_sec`, **seconds**.
 - Hermes: `timeout` and `connect_timeout`, **seconds**.
-- Roo Code: `timeout`, **seconds**, 1 to 3600.
+- Kilo Code: `timeout`, milliseconds, default 10000. Raise to 120000.
+- omp: `timeout`, milliseconds, default 30000.
+- Goose: `timeout`, **seconds**.
+- GitHub Copilot CLI: `--timeout` on `copilot mcp add`, milliseconds.
 - Gemini CLI: `timeout`, milliseconds, already 600000 by default.
 - Cline: no key in the file; it is a setting in the MCP servers panel.
 

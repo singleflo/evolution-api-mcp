@@ -74,14 +74,21 @@
         },
         {
           "name": "EVOLUTION_MCP_FILE_ROOTS",
-          "description": "Folders send_local_file may read: absolute paths of existing directories separated by the operating system's path separator (':' on macOS and Linux, ';' on Windows). Default: Desktop, Documents, Downloads, Pictures, Movies and Music in the home folder (those that exist) plus the download folder.",
+          "description": "Folders send_local_files may read: absolute paths of existing directories separated by the operating system's path separator (':' on macOS and Linux, ';' on Windows). Default: Desktop, Documents, Downloads, Pictures, Movies and Music in the home folder (those that exist) plus the download folder.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"
         },
         {
           "name": "EVOLUTION_MCP_DOWNLOAD_DIR",
-          "description": "Absolute folder where download_message_media saves received files. Default: ~/Downloads/evolution-api-mcp.",
+          "description": "Absolute folder where download_message_media saves received files and export_chat its exports/ folders. Default: ~/Downloads/evolution-api-mcp.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "EVOLUTION_MCP_TIMEZONE",
+          "description": "IANA time zone for the times tools show and for times given without a zone, e.g. Europe/Rome. Default: the computer's zone (TZ, then /etc/localtime), else UTC.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"

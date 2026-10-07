@@ -57,11 +57,12 @@ deployment sets `EVOLUTION_REMOTE_ALLOW_PRIVATE_TARGETS=1`.
 
 ### Local files (local server)
 
-`send_local_file` is the only tool that reads your disk. It reads only inside the folders in `EVOLUTION_MCP_FILE_ROOTS`
+`send_local_files` is the only tool that reads your disk. It reads only inside the folders in `EVOLUTION_MCP_FILE_ROOTS`
 (default: your `Desktop`, `Documents`, `Downloads`, `Pictures`, `Movies` and `Music` folders that exist, plus the download
 folder), resolves symlinks before checking containment, never sends a hidden file or a file inside a hidden folder, and
-refuses empty files and files over 100 MiB. `download_message_media` writes only into `EVOLUTION_MCP_DOWNLOAD_DIR`, with
-a sanitised file name.
+refuses empty files, files over 100 MiB, more than 10 files and more than 300 MiB in one call.
+`download_message_media` and `export_chat` write only into `EVOLUTION_MCP_DOWNLOAD_DIR` (exports under its `exports/`
+folder, replacing an earlier export of the same chat and period), with sanitised file names.
 
 ### Hosted-server restrictions
 

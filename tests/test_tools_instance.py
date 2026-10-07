@@ -68,6 +68,7 @@ async def test_status_of_an_open_instance(evo, bound):
         "server": "local",
         "policy": "standard",
         "toolsets": ["messaging", "chats"],
+        "timezone": "UTC",
         "tools_available": result["tools_available"],
     }
     assert result["tools_available"] > 1

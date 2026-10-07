@@ -78,7 +78,7 @@ Evolution API Assistant connects your AI host to one instance of your own Evolut
 
 This hosted connector accepts instances that use the WhatsApp Business Platform (the official Cloud API channel). You sign in once with your Evolution server address and that one instance's own token; the server-wide Evolution API key is refused, and creating, deleting or listing other instances is not offered.
 
-38 tools in 8 toolsets: chats (list, read, search, delivery status, received media), messaging (text, media, voice notes, locations, contact cards, list and button messages, reactions), contacts, templates (list, create, edit and send approved message templates), settings, events and integrations (read webhook, event and chatbot configuration; pause or close chatbot sessions; start a Typebot flow), and instance status. You tick the toolsets to enable and choose read only or standard, which adds sending and changing.
+41 tools in 8 toolsets: chats (list, recent messages, read, search, delivery status, received media, chat export), messaging (text, media, voice notes, locations, contact cards, list and button messages, reactions, forwarding), contacts, templates (list, create, edit and send approved message templates), settings, events and integrations (read webhook, event and chatbot configuration; pause or close chatbot sessions; start a Typebot flow), and instance status. You tick the toolsets to enable and choose read only or standard, which adds sending and changing.
 
 Sends are real and this connector cannot recall them; wording and recipients come from you, and the WhatsApp Business Messaging Policy applies: opt-in, the 24-hour window for free-form replies, templates beyond it. Logging out, deleting messages for everyone, leaving groups and deleting templates, bots or credentials are never available here, and neither are tools that take credentials or repoint webhooks, proxies and event streams; those live in the local server.
 
@@ -161,7 +161,7 @@ Initial submission.
 ```text
 This is the initial submission of the Evolution API Assistant plugin.
 
-Evolution API Assistant connects ChatGPT and Codex to the user's own Evolution API server and operates one WhatsApp Business Platform instance of it. 38 tools list chats, read and search stored messages, report delivery status, show and save received media, send messages and approved templates, and read or adjust instance settings and chatbots.
+Evolution API Assistant connects ChatGPT and Codex to the user's own Evolution API server and operates one WhatsApp Business Platform instance of it. 41 tools list chats, show and read stored messages, search them, report delivery status, show and save received media, export chats with their attachments, send and forward messages and send approved templates, and read or adjust instance settings and chatbots.
 
 Every change passes a policy chosen at connection time (read only or standard) and the toolsets the user ticks. Irreversible actions and tools that take credentials are never available on the hosted server. Authentication is OAuth 2.1 with dynamic client registration and PKCE; the hosted server stores each user's Evolution connection details (the instance token encrypted) and session tokens only, described in the privacy policy.
 
@@ -176,7 +176,7 @@ justifications are no longer required; earlier portal versions asked for one
 per annotation, so the reasoning stays in the `Why` column and the
 `openWorldHint` sentence below — confirm on submission day whether the portal
 asks for it. Claude's portal checks `readOnlyHint`/`destructiveHint` and the
-title against the wire. The rows are the 38 tools a hosted
+title against the wire. The rows are the 41 tools a hosted
 `WHATSAPP-BUSINESS` connection with policy `standard` and every toolset sees,
 listed by toolset then name; the hints are derived from each tool's kind in
 the registry (`registry.annotations_for`), never set by hand. The test in
@@ -207,6 +207,7 @@ by the publisher.
 | Tool | readOnlyHint | destructiveHint | openWorldHint | Why |
 |---|---|---|---|---|
 | `get_instance_status` | yes | no | yes | Reports the connection state, integration, enabled toolsets and tool count; a pure read that works even when the WhatsApp session is closed. |
+| `forward_message` | no | yes | yes | Re-sends a stored message's text, media, location or contact card to up to five chats immediately, as new messages; a send this server cannot recall. |
 | `react_to_message` | no | yes | yes | Puts an emoji on a message that the other people in the chat see, and a second reaction replaces the first, so the earlier state is lost. |
 | `send_button_message` | no | yes | yes | Delivers a button message to a person immediately; a send this server cannot recall. |
 | `send_contact_card` | no | yes | yes | Delivers contact cards, which share phone numbers with the recipient, immediately and irrevocably from this server. |
@@ -216,14 +217,16 @@ by the publisher.
 | `send_text_message` | no | yes | yes | Delivers a text message to a person or group immediately; a send this server cannot recall. |
 | `send_voice_note` | no | yes | yes | Delivers an audio file as a voice message immediately; a send this server cannot recall. |
 | `download_message_media` | no | no | yes | Saves a message's attachment as a file the caller can fetch for 15 minutes; not read-only because it creates a downloadable artifact, not destructive because nothing on WhatsApp or in Evolution changes. |
-| `get_chat` | yes | no | yes | Describes one chat: name, unread count, labels and the latest message; nothing is altered. |
+| `export_chat` | no | no | yes | Saves one chat or period as a transcript with its attachments in a ZIP the caller can fetch for 15 minutes; not read-only because it creates a downloadable artifact, not destructive because nothing on WhatsApp or in Evolution changes. |
+| `get_chat` | yes | no | yes | Describes one chat or person: name, phone number, unread count, labels, groups in common and the latest message; nothing is altered. |
 | `get_message` | yes | no | yes | Returns one stored message in full; a pure read. |
 | `get_message_status` | yes | no | yes | Reports how far a message got (sent, delivered, read, played); a pure read. |
 | `list_chats` | yes | no | yes | Lists chats with unread counts and a preview of the latest message; a pure read. |
+| `list_recent_messages` | yes | no | yes | Returns the newest messages of every chat in one call, grouped by chat; nothing is sent or changed. |
 | `read_messages` | yes | no | yes | Returns one chat's stored history page by page; nothing is sent or changed. |
-| `search_messages` | yes | no | yes | Scans stored messages for a phrase and returns the matches; a pure read. |
+| `search_messages` | yes | no | yes | Scans stored messages for words, a sender, a message type or a document name and returns the matches; a pure read. |
 | `view_message_image` | yes | no | yes | Returns a received or sent picture as an inline image; a pure read. |
-| `find_contacts` | yes | no | yes | Looks up stored contacts by name or phone number; a pure read. |
+| `find_chats` | yes | no | yes | Looks up stored contacts and groups by name or phone number; a pure read. |
 | `create_template` | no | no | yes | Submits a new message template to Meta for review; it stays a private draft until approved and nothing is sent to any person, and no existing template is overwritten. |
 | `edit_template` | no | yes | yes | Replaces the components or category of an existing template, which goes back through Meta's review, so the previous definition is lost. |
 | `list_templates` | yes | no | yes | Lists message templates with their approval status; a pure read. |
@@ -268,10 +271,10 @@ the plugin is correctly invoked and correctly declines.
 ### Positive test case 1: unread chats
 
 - Prompt: Which chats have unread messages, and what do they ask?
-- Expected tool: `list_chats` with `only_unread` set, then `read_messages` on
-  each chat it returns.
-- Expected result: a short list of chats — name, unread count, preview of the
-  latest message — followed by what the unread messages ask, or an explicit
+- Expected tool: `list_recent_messages` with `only_unread` true, which returns
+  each chat with unread messages together with its newest unread messages.
+- Expected result: a short list of chats — name, unread count, the newest
+  unread messages — followed by what the unread messages ask, or an explicit
   "no chats have unread messages" when the list is empty.
 - Fixture data: at least one chat whose unread count is above zero, holding a
   question from the fixture customer.
@@ -279,8 +282,8 @@ the plugin is correctly invoked and correctly declines.
 ### Positive test case 2: recent history with one customer
 
 - Prompt: Show me the last ten messages in my chat with the test customer.
-- Expected tool: `read_messages` with `limit` 10 on the customer's chat,
-  after `find_contacts` or `list_chats` when the assistant has only the name.
+- Expected tool: `read_messages` with `limit` 10 and the customer's name as
+  `chat`.
 - Expected result: ten messages, newest first, each with sender, timestamp,
   type and text (text over 1,500 characters is cut and flagged), or fewer when
   the chat holds fewer; both sides of the conversation appear.
@@ -310,9 +313,8 @@ the plugin is correctly invoked and correctly declines.
 ### Positive test case 5: a reply inside the 24-hour window
 
 - Prompt: Send the test customer the message "Thanks, we received your order."
-- Expected tool: `send_text_message` on the customer's chat (resolved with
-  `find_contacts` or `list_chats` when only the name is given), then
-  optionally `get_message_status`.
+- Expected tool: `send_text_message` with the customer's name as `chat` (an
+  exact name resolves to the chat), then optionally `get_message_status`.
 - Expected result: a confirmation carrying the message id, the chat id, a
   status and a timestamp; `get_message_status` then reports at least
   SERVER_ACK. The text arrives exactly as written. Run this case only with the
@@ -393,7 +395,7 @@ At that same consent page the reviewer chooses under "What the assistant may
 do". **Pick `standard`** ("Read and act: send messages, manage chats and
 configuration") — positive case 5 sends, and `read` refuses it by design — and
 under "Which toolsets to enable" **tick every box** (three are ticked when the
-page opens), so the scan sees all 38 tools. Irreversible actions and tools
+page opens), so the scan sees all 41 tools. Irreversible actions and tools
 that take credentials are not offered under either choice.
 
 What the account can see: `<one paragraph — the review number, the fixture

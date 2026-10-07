@@ -400,8 +400,8 @@ def _landing_page(settings: RemoteSettings) -> Response:
             '<div class="cards">'
             '<div class="card"><h3>Claude</h3><p>Customize, then Connectors, then Add custom connector. Paste the'
             " address and confirm.</p></div>"
-            '<div class="card"><h3>ChatGPT</h3><p>Turn on developer mode in Settings, then create an app for the'
-            " address at chatgpt.com/plugins.</p></div>"
+            '<div class="card"><h3>ChatGPT</h3><p>Open chatgpt.com/plugins, press the plus button and choose Add'
+            " custom MCP server, then enter the address above.</p></div>"
             '<div class="card"><h3>Codex and Claude Code</h3><p>One line each:'
             f" <code>codex mcp add evolution-api-mcp --url {endpoint}</code> or"
             f" <code>claude mcp add --transport http evolution-api-mcp {endpoint}</code>.</p></div>"

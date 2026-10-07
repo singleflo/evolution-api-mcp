@@ -68,6 +68,7 @@ class Connection:
     default_delay_ms: int
     max_writes_per_minute: int
     max_reads_per_minute: int
+    timezone: str = "UTC"
 
 
 ClientFactory = Callable[[str, str], EvolutionClient]
@@ -151,6 +152,7 @@ def _local_connection(state: _LocalState) -> Connection:
         default_delay_ms=config.default_delay_ms,
         max_writes_per_minute=config.max_writes_per_minute,
         max_reads_per_minute=0,
+        timezone=config.timezone,
     )
 
 

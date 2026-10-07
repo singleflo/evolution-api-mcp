@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from evolution_api_mcp import clock
+
 ENV_URL = "EVOLUTION_API_URL"
 ENV_TOKEN = "EVOLUTION_INSTANCE_TOKEN"
 ENV_TOOLSETS = "EVOLUTION_MCP_TOOLSETS"
@@ -25,6 +27,7 @@ ENV_DELAY = "EVOLUTION_MCP_DEFAULT_DELAY_MS"
 ENV_WRITES = "EVOLUTION_MCP_MAX_WRITES_PER_MINUTE"
 ENV_FILE_ROOTS = "EVOLUTION_MCP_FILE_ROOTS"
 ENV_DOWNLOAD_DIR = "EVOLUTION_MCP_DOWNLOAD_DIR"
+ENV_TIMEZONE = "EVOLUTION_MCP_TIMEZONE"
 
 DEFAULT_DELAY_MS = 1200
 MAX_DELAY_MS = 20_000
@@ -50,6 +53,7 @@ class LocalConfig:
     max_writes_per_minute: int
     file_roots: tuple[Path, ...]
     download_dir: Path
+    timezone: str = "UTC"
 
 
 def _get(environ: Mapping[str, str], name: str) -> str | None:
@@ -174,6 +178,18 @@ def load_local_config(
     if not download_dir.is_absolute():
         raise ConfigError(f"{ENV_DOWNLOAD_DIR}={download_raw!r} is not an absolute path: use an absolute directory.")
 
+    timezone_raw = _get(environ, ENV_TIMEZONE)
+    if timezone_raw is None:
+        display_zone = clock.detect_local_zone(environ)
+    else:
+        try:
+            clock.zone(timezone_raw)
+        except ValueError:
+            raise ConfigError(
+                f"{ENV_TIMEZONE}: unknown time zone '{timezone_raw}'. Use an IANA name such as Europe/Rome, or UTC."
+            ) from None
+        display_zone = timezone_raw
+
     roots_raw = _get(environ, ENV_FILE_ROOTS)
     if roots_raw is not None:
         file_roots = _parse_roots(roots_raw)
@@ -194,4 +210,5 @@ def load_local_config(
         max_writes_per_minute=max_writes,
         file_roots=file_roots,
         download_dir=download_dir,
+        timezone=display_zone,
     )

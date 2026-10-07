@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 30 September 2026.
+Last updated: 2 October 2026.
 
 This Privacy Policy explains how {{PUBLISHER}} collects, uses, stores, and protects your information when you connect an Evolution API instance to an AI client (such as Claude or ChatGPT) using our hosted remote server service.
 
@@ -22,6 +22,7 @@ To maintain an active connection and handle authorization securely, our remote s
 | Pending authorizations | The consent request that is waiting for you to press Connect or Refuse | Stored in the SQLite database for 10 minutes at most |
 | Tenant References | Generated internal identifiers linking your OAuth subject to your connection settings, with the time the connection was created and last used | Stored in the SQLite database |
 | Downloaded media | A received image, video, audio file or document, only when your assistant asks to download it | Stored on disk behind an unguessable link with a strict 15-minute Time-To-Live (TTL) |
+| Exported chats | A ZIP of one chat's messages and attachments, only when your assistant asks to export it | Stored on disk behind an unguessable link with a strict 15-minute Time-To-Live (TTL) |
 
 ## Why We Store It
 
@@ -31,6 +32,7 @@ Each category above is held for one purpose and for no other:
 * The policy and toolset selection are what the safety gate reads before every tool call, so that a connection authorised as read-only stays read-only and a toolset you did not tick is never offered.
 * Hashed tokens and tenant references are how a request is recognised as yours rather than another tenant's.
 * Downloaded media is the output of the tool you asked to run, kept only long enough for you to fetch it.
+* An exported chat is the output of the tool you asked to run, kept only long enough for you to fetch it.
 
 None of it is used for analytics, profiling, advertising, or the training of any model. We run no third-party trackers and the pages of this service load nothing from anyone else.
 
@@ -38,11 +40,13 @@ None of it is used for analytics, profiling, advertising, or the training of any
 
 One server runs this service, and everything described above stays on it: a single SQLite database file and a directory of downloaded files on the same machine. Nothing is copied to another provider, to a second region, or to an analytics service. The only outbound request this server makes on your behalf goes to the Evolution API address you named during consent. The application writes its own log lines to standard error; they can name the host of an Evolution server and the internal identifier of a connection, and never contain a token or the text of a message. The web server and hosting platform in front of the application may keep ordinary access logs (time, path, status and network address of each request).
 
+To show names next to messages and to accept a name where a chat is expected, the server reads contact and group names from your Evolution server and keeps them in memory for at most 10 minutes; they are never written to disk.
+
 ## What We Never Store
 
 We design our infrastructure to avoid processing or retaining personal or business records beyond what is strictly necessary to proxy requests. We never store:
 
-* WhatsApp messages, chat lists, contacts, group data or any other content returned by your Evolution server, beyond the 15-minute download link described above. The server hands that content to your AI host and keeps no copy.
+* WhatsApp messages, chat lists, contacts, group data or any other content returned by your Evolution server, beyond the 15-minute download and export links and the 10-minute in-memory name list described above. The server hands that content to your AI host and keeps no copy.
 * Conversation text, prompts, or messages exchanged between you and your AI host.
 * The instance token in plain text, or raw authorization codes, access tokens or refresh tokens.
 * The Evolution server's global API key, which the server refuses.
@@ -52,6 +56,7 @@ We design our infrastructure to avoid processing or retaining personal or busine
 We enforce strict data retention rules to ensure connection details and tokens are erased when no longer in use:
 
 * **Downloaded media**: The download link expires 15 minutes after it is issued; the bytes are removed when an expired link is hit, or by the hourly sweep at the latest.
+* **Exported chats**: same 15-minute link and hourly sweep as downloaded media.
 * **Access Tokens**: Short-lived tokens expiring after 1 hour.
 * **Refresh Tokens**: Expire after 30 days.
 * **Revocation & Disconnection**: When the last token family for your connection is revoked, which is what disconnecting the integration in your host application (such as Claude or ChatGPT) triggers, the tenant row holding your Evolution URL and encrypted instance token is deleted.

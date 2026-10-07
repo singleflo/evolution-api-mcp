@@ -20,7 +20,7 @@ Rules:
 from __future__ import annotations
 
 import json as jsonlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from urllib.parse import unquote
 
@@ -119,3 +119,25 @@ class FakeEvolution(httpx2.AsyncBaseTransport):
 
 def _path_matches(wanted: str, recorded_decoded: str) -> bool:
     return unquote(wanted) == recorded_decoded
+
+
+def program_directory(
+    evo: FakeEvolution,
+    instance: str = "inst",
+    *,
+    contacts: Iterable[dict] = (),
+    groups: Iterable[dict] = (),
+    rows: Iterable[dict] = (),
+    instance_row: dict | None = None,
+) -> None:
+    """Answer the four requests that build the name directory: contacts, groups, a page of messages, the instance."""
+    records = list(rows)
+    block = {"total": len(records), "pages": 1, "currentPage": 1, "records": records}
+    evo.on("POST", f"/chat/findContacts/{instance}", json=list(contacts))
+    evo.on("GET", f"/group/fetchAllGroups/{instance}", json=list(groups))
+    evo.on("POST", f"/chat/findMessages/{instance}", json={"messages": block})
+    evo.on(
+        "GET",
+        "/instance/fetchInstances",
+        json=[instance_row or {"name": instance, "ownerJid": "393930000000:7@s.whatsapp.net", "profileName": "Me"}],
+    )

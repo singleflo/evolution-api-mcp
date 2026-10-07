@@ -55,8 +55,19 @@ Protocol check: `npx @modelcontextprotocol/inspector --cli uv run evolution-api-
   environment. `tenant.py` is the hosted seam.
 - `client.py`, `calls.py`, `errors.py`, `netguard.py` — HTTP client, the single way a tool calls Evolution, the error
   mapping, the hosted SSRF guard. `jid.py`, `messages.py`, `sending.py`, `media.py`, `redact.py`, `ratelimit.py` — helpers.
+- `directory.py` — the in-memory name directory (contacts, groups, names learned from messages, this number's own ids),
+  cached per tenant for 10 minutes and never written to disk. Tools resolve a chat, group or person parameter through
+  `calls.resolve_chat` / `resolve_group` / `resolve_person` with a purpose (`read`, `write`, `send`): numbers and ids
+  are parsed literally (`calls.parse_chat` / `parse_group` / `parse_phone`, no Evolution call); a name needs an exact
+  match, and only `read` also takes a unique partial one.
+  Tools that act on one message take its id: `calls.stored_message` finds the row (an id shared by several chats is
+  refused with their chat_ids), so `chat` is optional there, and `sending.reply_target` lets a reply omit `chat`.
 - `remote/` — the hosted server (OAuth 2.1 authorization server, consent page, tenant store, file links).
-- `assets/guide.md` — served as the `evolution://guide` resource; it sits inside the package so the wheel ships it.
+- `assets/guide.md`, `assets/recipes.md` — served as the `evolution://guide` and `evolution://recipes` resources; they
+  sit inside the package so the wheel ships them. `recipes.md` holds only call sequences verified by hand against a
+  live instance (`docs/qa/SCENARIOS.md`).
+- `prompts.py` — the `inbox`, `reply`, `find_attachment` and `export` MCP prompts, and the completion of their `chat`
+  argument from the name directory (any failure yields no suggestions).
 
 ## House rules
 
@@ -77,10 +88,11 @@ Protocol check: `npx @modelcontextprotocol/inspector --cli uv run evolution-api-
   model ("you must", "always call", "ignore previous"): review treats them as prompt injection. Cross-tool guidance
   lives only in the server `instructions`. Every parameter has a `Field(description=...)`.
 - **Output.** Compact JSON text through `errors.tool_result` (registered with `structured_output=False`); only
-  `view_message_image` and `start_pairing` return content blocks. Results are capped at 10,000 characters with a notice
+  `view_message_image` and `start_pairing` return content blocks. Results are capped at 30,000 characters with a notice
   that names the remedy. Never return tokens, API keys, passwords, secrets, Evolution database ids, device tags or raw
   protobuf blobs; pass configuration through `redact.redact` before projecting it, and show secrets only as `..._set`.
-  Timestamps are ISO-8601 UTC. Tools whose inputs carry secrets (passwords, API keys, tokens) are `local_only`: the
+  Timestamps are ISO-8601 in the display zone (`clock.fmt`; `EVOLUTION_MCP_TIMEZONE`, UTC when hosted); wire filters
+  stay UTC. Tools whose inputs carry secrets (passwords, API keys, tokens) are `local_only`: the
   stores restrict collecting credentials.
 - **Errors.** Three outcomes: success; refused or failed, ending "Nothing was changed." or "Nothing was sent."; and
   UNCERTAIN after a write that may have applied, which carries a re-read of the state and says not to repeat the call.
@@ -93,10 +105,13 @@ Protocol check: `npx @modelcontextprotocol/inspector --cli uv run evolution-api-
   unknown toolsets fail startup, so a typo cannot fail open. The hosted server has policy `read` or `standard`, the
   fixed default deny list, no irreversible tools and no local-only tools.
 - **Pacing and rate limits.** Every send passes `delay` (default 1200 ms, range 0-20000). Local writes are limited to
-  30 per minute by default; hosted 30 writes and 120 reads per minute per tenant.
-- **Media.** Outgoing media is an http(s) URL Evolution downloads; local files go only through `send_local_file` on the
-  local server, inside the configured roots, never hidden paths, at most 100 MiB. Incoming media: `view_message_image`
-  (inline, up to 4 MiB) and `download_message_media` (a file locally, a 15-minute link when hosted).
+  30 per minute by default; hosted 30 writes and 120 reads per minute per tenant. A tool that delivers several messages
+  (`send_local_files`, `forward_message`) charges the extra ones with `ratelimit.charge` before the first send.
+- **Media.** Outgoing media is an http(s) URL Evolution downloads; local files go only through `send_local_files` on the
+  local server, inside the configured roots, never hidden paths, at most 100 MiB each, 10 files and 300 MiB per call.
+  Incoming media: `view_message_image` (inline, up to 4 MiB), `download_message_media` (a file locally, a 15-minute
+  link when hosted) and `export_chat` (a chat with its attachments: a folder under `exports/` of the download folder
+  locally, a ZIP of at most 100 MiB behind a 15-minute link when hosted).
 - **Language and style.** Everything shipped is English. Commit messages are conventional commits with a prose subject
   (`feat(tools): ...`, `fix(remote): ...`).
 - **Evolution quirks the code works around** (each was read in Evolution's source): the

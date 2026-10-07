@@ -14,17 +14,23 @@ from pydantic import Field
 Chat = Annotated[
     str,
     Field(
-        min_length=3,
+        min_length=2,
         max_length=128,
         description=(
-            "International phone number (country code first, e.g. 393331234567 or +39 333 123 4567) or a chat_id "
-            "from list_chats (…@s.whatsapp.net, …@g.us, …@lid)."
+            "Chat: an international phone number (country code first, e.g. 393331234567 or +39 333 123 4567), a "
+            "chat_id from list_chats or find_chats (…@s.whatsapp.net, …@g.us, …@lid), or a contact or group name. A "
+            "name shared by several chats is refused with their chat_ids; tools that send or change something accept "
+            "only an exact name."
         ),
     ),
 ]
 Group = Annotated[
     str,
-    Field(min_length=5, max_length=64, description="Group chat_id (…@g.us) or its digits, from list_groups."),
+    Field(
+        min_length=2,
+        max_length=128,
+        description="Group: its chat_id (…@g.us), its digits, or its exact name, from list_groups or find_chats.",
+    ),
 ]
 MessageId = Annotated[
     str,
@@ -36,11 +42,19 @@ MessageId = Annotated[
 ]
 ReplyTo = Annotated[
     str | None,
-    Field(description="Quote this earlier message of the same chat (message id)."),
+    Field(
+        description=(
+            "Quote this earlier message (message id). When chat is omitted the message is sent in the chat of the "
+            "quoted message; when both are given the message must belong to that chat."
+        )
+    ),
 ]
 Mention = Annotated[
     list[str] | None,
-    Field(max_length=50, description="Phone numbers to @-mention. WhatsApp Web (Baileys) instances only."),
+    Field(
+        max_length=50,
+        description="Phone numbers or exact contact names to @-mention. WhatsApp Web (Baileys) instances only.",
+    ),
 ]
 MentionEveryone = Annotated[
     bool,

@@ -95,6 +95,8 @@ def session_result(tmp_path_factory: pytest.TempPathFactory) -> dict:
         listing = session.request(2, "tools/list")
         call = session.request(3, "tools/call", {"name": "get_instance_status", "arguments": {}})
         guide = session.request(4, "resources/read", {"uri": "evolution://guide"})
+        recipes = session.request(5, "resources/read", {"uri": "evolution://recipes"})
+        prompts = session.request(6, "prompts/list")
     finally:
         session.close()
     return {
@@ -102,6 +104,8 @@ def session_result(tmp_path_factory: pytest.TempPathFactory) -> dict:
         "listing": listing,
         "call": call,
         "guide": guide,
+        "recipes": recipes,
+        "prompts": prompts,
         "captured": capture.read_text(encoding="utf-8"),
         "stderr": (directory / "stderr.txt").read_text(encoding="utf-8"),
     }
@@ -162,6 +166,23 @@ def test_the_guide_resource_is_served_as_markdown(session_result):
         assert heading in content["text"]
 
 
+def test_the_recipes_resource_is_served_as_markdown(session_result):
+    (content,) = session_result["recipes"]["result"]["contents"]
+    assert content["uri"] == "evolution://recipes"
+    assert content["mimeType"] == "text/markdown"
+    assert content["text"].startswith("# Evolution API Assistant recipes")
+
+
+def test_the_prompts_are_listed(session_result):
+    prompts = session_result["prompts"]["result"]["prompts"]
+    assert sorted(prompt["name"] for prompt in prompts) == ["export", "find_attachment", "inbox", "reply"]
+
+
+def test_the_handshake_advertises_prompts_resources_and_completions(session_result):
+    capabilities = session_result["initialize"]["result"]["capabilities"]
+    assert {"prompts", "resources", "completions"} <= set(capabilities)
+
+
 def test_stdout_carries_only_json_rpc(session_result):
     lines = [line for line in session_result["captured"].splitlines() if line.strip()]
     assert len(lines) >= 4
@@ -189,7 +210,7 @@ def test_list_tools_prints_the_catalog_without_credentials():
     assert done.returncode == 0
     catalog = json.loads(done.stdout)
     assert [entry["name"] for entry in catalog] == [spec.name for spec in registry.specs()]
-    assert len(catalog) == 97
+    assert len(catalog) == 100
     assert set(catalog[0]) == {"name", "title", "toolset", "kind", "integrations", "local_only"}
     assert {entry["toolset"] for entry in catalog} == set(TOOLSET_ORDER)
 
@@ -200,7 +221,7 @@ def test_list_toolsets_prints_names_descriptions_counts_and_presets():
     assert done.returncode == 0
     listing = json.loads(done.stdout)
     assert [entry["name"] for entry in listing["toolsets"]] == list(TOOLSET_ORDER)
-    assert sum(entry["tools"] for entry in listing["toolsets"]) == 97
+    assert sum(entry["tools"] for entry in listing["toolsets"]) == 100
     assert listing["presets"]["core"] == ["messaging", "chats", "contacts"]
     assert listing["presets"]["all"] == list(TOOLSET_ORDER)
     assert listing["default"] == ["messaging", "chats", "contacts"]

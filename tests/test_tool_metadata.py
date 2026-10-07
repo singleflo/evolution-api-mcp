@@ -16,7 +16,7 @@ async def _listed(mode: str, connection: context.Connection):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(("mode", "expected_count"), [("local", 97), ("hosted", 89)])
+@pytest.mark.parametrize(("mode", "expected_count"), [("local", 100), ("hosted", 92)])
 async def test_every_tool_publishes_title_annotations_and_all_four_hints(make_connection, mode, expected_count):
     tools = await _listed(mode, make_connection(mode=mode, identity=None, subject="t_test"))
 

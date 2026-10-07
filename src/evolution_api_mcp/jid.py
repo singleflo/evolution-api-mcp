@@ -92,6 +92,13 @@ def normalize_group(group: str) -> str:
     return f"{bare}@g.us"
 
 
+def is_group_id(value: str) -> bool:
+    """True for ``…@g.us`` and for bare group digits (digits joined by dashes): input `normalize_group` accepts."""
+    value = value.strip()
+    bare = value[: -len("@g.us")] if value.endswith("@g.us") else value
+    return _GROUP_DIGITS.fullmatch(bare) is not None
+
+
 def phone_of(jid: str) -> str | None:
     """Digits of a ``…@s.whatsapp.net`` JID; ``None`` for groups, @lid ids and anything else."""
     suffix = "@s.whatsapp.net"

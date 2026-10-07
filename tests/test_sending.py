@@ -6,6 +6,7 @@ from evolution_api_mcp.client import EvolutionClient
 from evolution_api_mcp.errors import ToolExecutionError
 from evolution_api_mcp.registry import BAILEYS, BUSINESS
 from tests.conftest import BASE, INSTANCE, TOKEN
+from tests.fakes import program_directory
 
 PERSON = "393331234567@s.whatsapp.net"
 GROUP = "120363012345678901@g.us"
@@ -36,15 +37,15 @@ def _client(evo):
     return EvolutionClient(BASE, TOKEN, transport=evo)
 
 
-async def _options(evo, conn, chat=PERSON, **kwargs):
+async def _options(evo, conn, **kwargs):
     defaults = {
         "delay_ms": None,
-        "reply_to_message_id": None,
+        "quoted_row": None,
         "mention": None,
         "mention_everyone": False,
         "link_preview": None,
     }
-    return await sending.build_options(_client(evo), conn.identity, conn, chat, **{**defaults, **kwargs})
+    return await sending.build_options(_client(evo), conn.identity, conn, **{**defaults, **kwargs})
 
 
 # --- recipient -------------------------------------------------------------------------------------------------
@@ -104,10 +105,9 @@ async def test_plain_options_carry_only_the_delay(evo, make_connection):
 
 
 @pytest.mark.anyio
-async def test_reply_resolves_the_stored_key_including_participant(evo, make_connection):
+async def test_a_quoted_row_becomes_the_quoted_key_including_participant(evo, make_connection):
     stored = _row("3EB0AAAA03", from_me=False, participant="391110001111@s.whatsapp.net", remote=GROUP)
-    evo.on("POST", FIND_MESSAGES, json=_page(stored))
-    options = await _options(evo, make_connection(), chat=GROUP, reply_to_message_id="3EB0AAAA03")
+    options = await _options(evo, make_connection(), quoted_row=stored)
     assert options["quoted"] == {
         "key": {
             "id": "3EB0AAAA03",
@@ -116,18 +116,99 @@ async def test_reply_resolves_the_stored_key_including_participant(evo, make_con
             "participant": "391110001111@s.whatsapp.net",
         }
     }
-    where = evo.last("POST", FIND_MESSAGES).json["where"]
-    assert where["key"]["id"] == "3EB0AAAA03"
-    assert where["key"]["remoteJid"] == GROUP
-    assert where["key"]["remoteJidAlt"] == GROUP
+    assert evo.requests == []
+
+
+# --- reply_target ----------------------------------------------------------------------------------------------
 
 
 @pytest.mark.anyio
-async def test_reply_to_an_unknown_message_is_refused(evo, make_connection):
-    evo.on("POST", FIND_MESSAGES, json=_page())
+async def test_reply_target_without_a_reply_resolves_the_chat(evo, make_connection):
+    conn = make_connection()
+    assert await sending.reply_target(_client(evo), conn, "+39 333 123 4567", None) == (PERSON, None)
+    assert evo.requests == []
+
+
+@pytest.mark.anyio
+async def test_reply_target_with_neither_chat_nor_reply_is_refused(evo, make_connection):
     with pytest.raises(ToolExecutionError) as caught:
-        await _options(evo, make_connection(), reply_to_message_id="3EB0MISSING")
-    assert str(caught.value) == "Message 3EB0MISSING was not found in this chat. Use read_messages to find its id."
+        await sending.reply_target(_client(evo), make_connection(), None, None)
+    assert str(caught.value) == (
+        "Give chat, or reply_to_message_id to answer in that message's chat. Nothing was sent."
+    )
+    assert evo.requests == []
+
+
+@pytest.mark.anyio
+async def test_reply_target_without_a_chat_uses_the_chat_of_the_message(evo, make_connection):
+    stored = _row("3EB0AAAA03", from_me=False, participant="391110001111@s.whatsapp.net", remote=GROUP)
+    evo.on("POST", FIND_MESSAGES, json=_page(stored))
+    chat_jid, row = await sending.reply_target(_client(evo), make_connection(), None, "3EB0AAAA03")
+    assert chat_jid == GROUP
+    assert row == stored
+    assert evo.last("POST", FIND_MESSAGES).json == {"where": {"key": {"id": "3EB0AAAA03"}}, "offset": 2, "page": 1}
+
+
+@pytest.mark.anyio
+async def test_reply_target_with_a_chat_filters_the_lookup_by_that_chat(evo, make_connection):
+    stored = _row("3EB0AAAA03", from_me=False, remote=GROUP)
+    evo.on("POST", FIND_MESSAGES, json=_page(stored))
+    chat_jid, row = await sending.reply_target(_client(evo), make_connection(), GROUP, "3EB0AAAA03")
+    assert (chat_jid, row) == (GROUP, stored)
+    assert evo.last("POST", FIND_MESSAGES).json["where"] == {
+        "key": {"id": "3EB0AAAA03", "remoteJid": GROUP, "remoteJidAlt": GROUP}
+    }
+
+
+@pytest.mark.anyio
+async def test_reply_target_refuses_a_message_of_another_chat(evo, make_connection):
+    evo.on("POST", FIND_MESSAGES, json=_page(_row("3EB0AAAA03", from_me=False, remote=GROUP)))
+    with pytest.raises(ToolExecutionError) as caught:
+        await sending.reply_target(_client(evo), make_connection(), PERSON, "3EB0AAAA03")
+    assert str(caught.value) == f"Message 3EB0AAAA03 belongs to chat {GROUP}, not {PERSON}. Nothing was sent."
+
+
+@pytest.mark.anyio
+async def test_reply_target_accepts_the_alternate_jid_of_the_message(evo, make_connection):
+    row = _row("3EB0AAAA03", from_me=False, remote="99887766@lid")
+    row["key"]["remoteJidAlt"] = PERSON
+    evo.on("POST", FIND_MESSAGES, json=_page(row))
+    chat_jid, _ = await sending.reply_target(_client(evo), make_connection(), PERSON, "3EB0AAAA03")
+    assert chat_jid == PERSON
+
+
+@pytest.mark.anyio
+async def test_reply_target_for_an_unknown_message_is_refused(evo, make_connection):
+    evo.on("POST", FIND_MESSAGES, json=_page())
+    conn = make_connection()
+    with pytest.raises(ToolExecutionError) as anywhere:
+        await sending.reply_target(_client(evo), conn, None, "3EB0MISSING")
+    with pytest.raises(ToolExecutionError) as in_chat:
+        await sending.reply_target(_client(evo), conn, PERSON, "3EB0MISSING")
+    hint = "read_messages, search_messages and list_recent_messages show message ids. Nothing was sent."
+    assert str(anywhere.value) == f"Message 3EB0MISSING was not found. {hint}"
+    assert str(in_chat.value) == f"Message 3EB0MISSING was not found in this chat. {hint}"
+
+
+@pytest.mark.anyio
+async def test_reply_target_names_the_chats_of_an_ambiguous_id(evo, make_connection):
+    evo.on(
+        "POST",
+        FIND_MESSAGES,
+        json={
+            "messages": {
+                "total": 2,
+                "pages": 1,
+                "currentPage": 1,
+                "records": [_row("3EB0AAAA03", from_me=False), _row("3EB0AAAA03", from_me=False, remote=GROUP)],
+            }
+        },
+    )
+    with pytest.raises(ToolExecutionError) as caught:
+        await sending.reply_target(_client(evo), make_connection(), None, "3EB0AAAA03")
+    assert str(caught.value) == (
+        f"Message 3EB0AAAA03 exists in 2 chats ({PERSON}, {GROUP}). Pass chat to pick one. Nothing was sent."
+    )
 
 
 @pytest.mark.anyio
@@ -141,10 +222,24 @@ async def test_mentions_are_normalised_to_digits_on_baileys(evo, make_connection
 
 @pytest.mark.anyio
 async def test_mention_that_is_not_a_phone_is_refused(evo, make_connection):
-    with pytest.raises(ToolExecutionError, match="Unsupported chat id"):
-        await _options(evo, make_connection(), mention=["abc"])
-    with pytest.raises(ToolExecutionError, match="mentions take phone numbers"):
+    with pytest.raises(ToolExecutionError, match="Unsupported chat id 'abc@foo.com'"):
+        await _options(evo, make_connection(), mention=["abc@foo.com"])
+    with pytest.raises(ToolExecutionError, match=r"is not a phone number.*Nothing was sent\.$"):
         await _options(evo, make_connection(), mention=[GROUP])
+    assert evo.requests == []
+
+
+@pytest.mark.anyio
+async def test_mention_by_exact_contact_name_becomes_digits(evo, make_connection):
+    program_directory(
+        evo,
+        INSTANCE,
+        contacts=[{"remoteJid": "393331234567@s.whatsapp.net", "pushName": "Mario Rossi", "isSaved": True}],
+    )
+
+    options = await _options(evo, make_connection(), mention=["mario rossi", "393331234567"])
+
+    assert options["mentioned"] == ["393331234567"]
 
 
 @pytest.mark.anyio

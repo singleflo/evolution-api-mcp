@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
+from evolution_api_mcp import clock, jid
 from evolution_api_mcp.context import instance_path
 
 if TYPE_CHECKING:
     from evolution_api_mcp.client import EvolutionClient
     from evolution_api_mcp.context import InstanceIdentity
+    from evolution_api_mcp.directory import Directory
 
-_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+_WIRE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 _TYPE_BY_RAW = {
@@ -74,12 +77,12 @@ def ts_seconds(value: object) -> int | None:
 
 
 def iso(ts: object) -> str | None:
-    """ISO-8601 UTC string (``2026-09-29T21:04:05Z``) of a timestamp value, or ``None``."""
+    """ISO-8601 string of a timestamp value in the display zone (``2026-09-29T21:04:05Z`` in UTC), or ``None``."""
     seconds = ts_seconds(ts)
     if seconds is None:
         return None
     try:
-        return datetime.fromtimestamp(seconds, tz=timezone.utc).strftime(_TIME_FORMAT)
+        return clock.fmt(datetime.fromtimestamp(seconds, tz=timezone.utc))
     except (OverflowError, OSError, ValueError):
         return None
 
@@ -90,10 +93,16 @@ def chat_key_filter(chat_jid: str) -> dict:
     return {"remoteJid": chat_jid, "remoteJidAlt": chat_jid}
 
 
-def _format_time(moment: datetime) -> str:
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment.astimezone(timezone.utc).strftime(_TIME_FORMAT)
+def is_noise_chat(chat_id: str | None) -> bool:
+    """True for non-conversation chats: status updates, broadcast lists, newsletters and the 0@ system chat."""
+    return isinstance(chat_id, str) and (
+        chat_id in {"status@broadcast", "0@s.whatsapp.net"} or chat_id.endswith(("@newsletter", "@broadcast"))
+    )
+
+
+def _wire_time(moment: datetime) -> str:
+    """UTC ``...Z`` string Evolution filters on; a value without a zone is read in the display zone."""
+    return clock.aware(moment).astimezone(timezone.utc).strftime(_WIRE_TIME_FORMAT)
 
 
 def time_window(since: datetime | None, until: datetime | None) -> dict | None:
@@ -101,8 +110,8 @@ def time_window(since: datetime | None, until: datetime | None) -> dict | None:
     if since is None and until is None:
         return None
     return {
-        "gte": _format_time(since if since is not None else _EPOCH),
-        "lte": _format_time(until if until is not None else datetime.now(timezone.utc) + timedelta(days=1)),
+        "gte": _wire_time(since if since is not None else _EPOCH),
+        "lte": _wire_time(until if until is not None else datetime.now(timezone.utc) + timedelta(days=1)),
     }
 
 
@@ -155,6 +164,12 @@ def _media_payload(message: dict) -> dict:
     return _dict(wrapped)
 
 
+def file_name_of(row: dict) -> str | None:
+    """The stored file name of a media message (a document's name), or ``None``."""
+    name = _media_payload(_dict(row.get("message"))).get("fileName")
+    return name if isinstance(name, str) and name else None
+
+
 def _context_info(row: dict, message: dict) -> dict:
     info = row.get("contextInfo")
     if isinstance(info, dict) and info:
@@ -184,8 +199,47 @@ def _last_status(row: dict) -> str | None:
     return status if isinstance(status, str) and status else None
 
 
-def project_message(row: dict, *, text_limit: int | None = 1500) -> dict:
-    """Compact, secret-free view of one stored message row (keys with no value are omitted)."""
+def _label(chat_id: str, names: Directory | None) -> str:
+    """A readable label for a jid: the known name, else the phone digits, else the jid itself."""
+    if names is not None and (name := names.name_of(chat_id)):
+        return name
+    phone = names.phone_of(chat_id) if names is not None else jid.phone_of(chat_id)
+    return phone or chat_id
+
+
+def _is_me(chat_id: str, names: Directory) -> bool:
+    if chat_id in names.me:
+        return True
+    phone = names.phone_of(chat_id)
+    return phone is not None and f"{phone}@s.whatsapp.net" in names.me
+
+
+def _quoted(context: dict, names: Directory | None) -> dict | None:
+    stanza = context.get("stanzaId")
+    if not isinstance(stanza, str) or not stanza:
+        return None
+    quoted: dict = {"message_id": stanza}
+    participant = context.get("participant")
+    if isinstance(participant, str) and participant:
+        quoted["sender"] = (names.name_of(participant) if names is not None else None) or participant
+    text = extract_text(_dict(context.get("quotedMessage")))
+    if text is not None:
+        quoted["text"] = text[:200]
+    return quoted
+
+
+def project_message(
+    row: dict,
+    *,
+    text_limit: int | None = 1500,
+    names: Directory | None = None,
+    include_chat_name: bool = False,
+) -> dict:
+    """Compact, secret-free view of one stored message row (keys with no value are omitted).
+
+    With `names`, senders, quoted senders and mentions carry the names the directory knows and `@lid` senders carry
+    their phone number; `include_chat_name` adds the chat's name.
+    """
     key = _dict(row.get("key"))
     message = _dict(row.get("message"))
     raw_type = row.get("messageType") if isinstance(row.get("messageType"), str) else None
@@ -207,28 +261,47 @@ def project_message(row: dict, *, text_limit: int | None = 1500) -> dict:
     sender_name = None
     if isinstance(push_name, str) and push_name and not from_me and push_name != "Você":
         sender_name = push_name
+    elif (
+        names is not None
+        and isinstance(sender, str)
+        and sender != "me"
+        and not (sender == chat_id and sender.endswith("@g.us"))
+    ):
+        sender_name = names.name_of(sender)
+
+    sender_phone = None
+    if names is not None and isinstance(sender, str) and sender.endswith("@lid"):
+        sender_phone = names.phone_of(sender)
+
+    deleted = key.get("deleted") is True or row.get("status") == "DELETED"
 
     out: dict = {
         "message_id": key.get("id"),
         "chat_id": chat_id,
+        "chat_name": names.name_of(chat_id) if include_chat_name and names is not None else None,
         "from_me": from_me,
         "sender": sender,
         "sender_name": sender_name,
+        "sender_phone": sender_phone,
         "timestamp": iso(row.get("messageTimestamp")),
         "type": kind,
     }
     if kind == "other":
         out["raw_type"] = raw_type
+    if deleted:
+        out["deleted"] = True
 
     text = extract_text(message)
-    if text is not None:
+    if text is not None and not deleted:
         if text_limit is not None and len(text) > text_limit:
             out["text"] = text[:text_limit]
             out["text_truncated"] = True
         else:
             out["text"] = text
 
-    if kind in _MEDIA_TYPES:
+    if deleted:
+        pass
+    elif kind in _MEDIA_TYPES:
         payload = _media_payload(message)
         media = _compact(
             {
@@ -272,9 +345,64 @@ def project_message(row: dict, *, text_limit: int | None = 1500) -> dict:
             {"emoji": payload.get("text"), "target_message_id": _dict(payload.get("key")).get("id")}
         )
 
-    out["quoted_message_id"] = context.get("stanzaId")
+    out["quoted"] = _quoted(context, names)
+    score = context.get("forwardingScore")
+    if context.get("isForwarded") is True or (isinstance(score, int) and not isinstance(score, bool) and score > 0):
+        out["forwarded"] = True
+    mentioned = context.get("mentionedJid")
+    mentioned_jids = (
+        [value for value in mentioned if isinstance(value, str) and value] if isinstance(mentioned, list) else []
+    )
+    if mentioned_jids:
+        out["mentions"] = [_label(value, names) for value in mentioned_jids]
+        if names is not None and any(_is_me(value, names) for value in mentioned_jids):
+            out["mentions_me"] = True
     out["status"] = _last_status(row)
     return {name: value for name, value in out.items() if value is not None}
+
+
+def project_rows(
+    rows: Iterable[object],
+    *,
+    text_limit: int | None = 1500,
+    names: Directory | None = None,
+    include_chat_name: bool = False,
+) -> list[dict]:
+    """Project every row, folding each reaction whose target is in the same list into the target's `reactions`.
+
+    A reaction becomes `{"emoji", "by"}` on its target and its own row is dropped. A person keeps one reaction per
+    message (the newest), and one with an empty emoji (a removed reaction) shows nothing. Reactions whose target is
+    outside the list stay as rows.
+    """
+    projected: list[tuple[dict, int]] = []
+    for row in rows:
+        if isinstance(row, dict):
+            message = project_message(row, text_limit=text_limit, names=names, include_chat_name=include_chat_name)
+            projected.append((message, ts_seconds(row.get("messageTimestamp")) or 0))
+    targets = {
+        message["message_id"]: message
+        for message, _ in projected
+        if message.get("type") != "reaction" and isinstance(message.get("message_id"), str)
+    }
+
+    def target_of(message: dict) -> str | None:
+        target = _dict(message.get("reaction")).get("target_message_id")
+        return target if message.get("type") == "reaction" and target in targets else None
+
+    newest: dict[tuple[str, object], tuple[int, str, str]] = {}  # (target, sender) -> (timestamp, emoji, by)
+    for message, moment in projected:
+        target = target_of(message)
+        if target is None:
+            continue
+        sender = message.get("sender")
+        known = newest.get((target, sender))
+        if known is None or moment > known[0]:
+            by = message.get("sender_name") or sender or "unknown"
+            newest[(target, sender)] = (moment, _dict(message.get("reaction")).get("emoji") or "", by)
+    for (target, _), (_, emoji, by) in newest.items():
+        if emoji:
+            targets[target].setdefault("reactions", []).append({"emoji": emoji, "by": by})
+    return [message for message, _ in projected if target_of(message) is None]
 
 
 async def fetch_page(
@@ -301,18 +429,37 @@ async def fetch_page(
     }
 
 
+class AmbiguousMessageId(Exception):
+    """A message id looked up without a chat belongs to messages of several chats."""
+
+    def __init__(self, message_id: str, chat_ids: list[str]) -> None:
+        super().__init__(f"Message {message_id} exists in {len(chat_ids)} chats: {', '.join(chat_ids)}.")
+        self.message_id = message_id
+        self.chat_ids = chat_ids
+
+
 async def find_message(
     client: EvolutionClient,
     identity: InstanceIdentity,
     message_id: str,
     chat_jid: str | None = None,
 ) -> dict | None:
-    """The stored row of a message id (optionally within one chat), or ``None``."""
+    """The stored row of a message id (optionally within one chat), or ``None``.
+
+    Without a chat, two rows are fetched so that an id shared by several chats raises `AmbiguousMessageId`.
+    """
     key: dict = {"id": message_id}
     if chat_jid is not None:
         key |= chat_key_filter(chat_jid)
-    page = await fetch_page(client, identity, where={"key": key}, page_size=1, page=1)
-    return page["records"][0] if page["records"] else None
+    page = await fetch_page(client, identity, where={"key": key}, page_size=1 if chat_jid else 2, page=1)
+    records = [row for row in page["records"] if isinstance(row, dict)]
+    if chat_jid is None and page["total"] > 1:
+        chat_ids = list(
+            dict.fromkeys(c for row in records if isinstance(c := _dict(row.get("key")).get("remoteJid"), str))
+        )
+        if len(chat_ids) > 1:
+            raise AmbiguousMessageId(message_id, chat_ids)
+    return records[0] if records else None
 
 
 async def latest_message(client: EvolutionClient, identity: InstanceIdentity, chat_jid: str) -> dict | None:

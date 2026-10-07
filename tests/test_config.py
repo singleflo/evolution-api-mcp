@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from evolution_api_mcp import policy, registry
+from evolution_api_mcp import clock, policy, registry
 from evolution_api_mcp.config import ConfigError, load_local_config
 from evolution_api_mcp.toolsets import DEFAULT_TOOLSETS, TOOLSET_ORDER
 
@@ -229,3 +229,30 @@ def test_download_dir_override_joins_the_default_roots(tmp_path: Path) -> None:
 def test_download_dir_must_be_absolute() -> None:
     with pytest.raises(ConfigError, match="EVOLUTION_MCP_DOWNLOAD_DIR"):
         load_local_config({"EVOLUTION_MCP_DOWNLOAD_DIR": "downloads"})
+
+
+def test_timezone_variable_sets_the_display_zone() -> None:
+    assert load_local_config({"EVOLUTION_MCP_TIMEZONE": "Europe/Rome"}).timezone == "Europe/Rome"
+    assert load_local_config({"EVOLUTION_MCP_TIMEZONE": "UTC"}).timezone == "UTC"
+
+
+def test_blank_or_unset_timezone_uses_the_detected_zone(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[object] = []
+
+    def detect(environ: object) -> str:
+        seen.append(environ)
+        return "Asia/Tokyo"
+
+    monkeypatch.setattr(clock, "detect_local_zone", detect)
+
+    assert load_local_config({}).timezone == "Asia/Tokyo"
+    assert load_local_config({"EVOLUTION_MCP_TIMEZONE": "  "}).timezone == "Asia/Tokyo"
+    assert len(seen) == 2
+
+
+def test_unknown_timezone_stops_startup_with_the_accepted_values() -> None:
+    with pytest.raises(ConfigError) as caught:
+        load_local_config({"EVOLUTION_MCP_TIMEZONE": "Mars/Olympus"})
+    assert str(caught.value) == (
+        "EVOLUTION_MCP_TIMEZONE: unknown time zone 'Mars/Olympus'. Use an IANA name such as Europe/Rome, or UTC."
+    )

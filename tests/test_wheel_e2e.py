@@ -7,7 +7,7 @@ README's host configs do, and drives `initialize` -> `tools/list` -> `tools/call
 It exists because a clean exit proves nothing: `printf '' | uvx --from dist/*.whl evolution-api-mcp` exits 0 because
 EOF on stdin closes the session BEFORE any tool runs. Only an actual `tools/call` forces credential resolution, only
 `tools/list` proves every `tools/*.py` module made it into the wheel, and only `resources/read` proves
-`assets/guide.md` did.
+`assets/guide.md` and `assets/recipes.md` did.
 
 No Evolution server is involved: the credential variables are blanked, so `get_instance_status` fails before any
 request is sent, and that failure is the vehicle.
@@ -54,6 +54,7 @@ class WheelSession(NamedTuple):
     listing: dict
     call: dict
     guide: dict
+    recipes: dict
     stdout_lines: list[str]
 
 
@@ -146,9 +147,10 @@ def _run_session(wheel: Path, workdir: Path, credentials: dict[str, str]) -> Whe
         listing = stdio.request(2, "tools/list")
         call = stdio.request(3, "tools/call", {"name": "get_instance_status", "arguments": {}})
         guide = stdio.request(4, "resources/read", {"uri": "evolution://guide"})
+        recipes = stdio.request(5, "resources/read", {"uri": "evolution://recipes"})
     finally:
         lines = stdio.close()
-    return WheelSession(listing=listing, call=call, guide=guide, stdout_lines=lines)
+    return WheelSession(listing=listing, call=call, guide=guide, recipes=recipes, stdout_lines=lines)
 
 
 @pytest.fixture(scope="module")
@@ -213,6 +215,13 @@ def test_the_wheel_ships_the_guide_resource(uncredentialed: WheelSession):
     assert content["uri"] == "evolution://guide"
     assert content["mimeType"] == "text/markdown"
     assert content["text"].startswith("# Evolution API Assistant guide")
+
+
+def test_the_wheel_ships_the_recipes_resource(uncredentialed: WheelSession):
+    (content,) = uncredentialed.recipes["result"]["contents"]
+    assert content["uri"] == "evolution://recipes"
+    assert content["mimeType"] == "text/markdown"
+    assert content["text"].startswith("# Evolution API Assistant recipes")
 
 
 def test_that_failure_reaches_the_wire_as_isError_from_the_artifact(uncredentialed: WheelSession):

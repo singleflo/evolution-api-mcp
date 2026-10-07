@@ -67,8 +67,8 @@ async def get_instance_status() -> str:
     Use it first to learn whether the WhatsApp session is open and which integration this instance runs
     (WHATSAPP-BAILEYS, WHATSAPP-BUSINESS or EVOLUTION). Returns the instance name, its state (open, connecting or
     close), the linked phone number and profile name, the Evolution version, whether this is the local or hosted
-    server, the safety policy, the enabled toolsets and how many tools are available on this connection. It reads
-    only and works even when the session is closed.
+    server, the safety policy, the enabled toolsets and how many tools are available on this connection, and the
+    time zone in which times are shown. It reads only and works even when the session is closed.
     """
     conn, client = await context.resolve()
     identity = conn.identity
@@ -89,6 +89,7 @@ async def get_instance_status() -> str:
         "server": conn.mode,
         "policy": conn.policy,
         "toolsets": [name for name in TOOLSET_ORDER if name in conn.toolsets],
+        "timezone": conn.timezone,
         "tools_available": sum(1 for spec in registry.specs() if policy.visible(spec, conn)),
     }
     if state != "open":

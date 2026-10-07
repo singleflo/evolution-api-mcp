@@ -126,8 +126,8 @@ async def test_a_fresh_instance_has_no_chats_contacts_or_history(local_server: N
     assert history["messages"] == []
     assert "DATABASE_SAVE_DATA_NEW_MESSAGE" in history["note"]
 
-    found = json.loads(await contacts.find_contacts())
-    assert found["contacts"] == []
+    found = json.loads(await contacts.find_chats(query="xx"))
+    assert found["chats"] == []
 
 
 async def test_sending_from_an_unpaired_instance_fails_as_a_tool_error(local_server: None) -> None:

@@ -26,7 +26,7 @@ MASTER_TABLE: list[tuple[str, str, str, bool, frozenset[str], bool, bool]] = [
     ("set_presence", "instance", W, True, BAI, False, False),
     ("send_text_message", "messaging", D, False, ALL, False, False),
     ("send_media_message", "messaging", D, False, ALL, False, False),
-    ("send_local_file", "messaging", D, False, ALL, True, False),
+    ("send_local_files", "messaging", D, False, ALL, True, False),
     ("send_voice_note", "messaging", D, False, ALL, False, False),
     ("send_video_note", "messaging", D, False, BAI, False, False),
     ("send_sticker", "messaging", D, False, BAI, False, False),
@@ -35,11 +35,13 @@ MASTER_TABLE: list[tuple[str, str, str, bool, frozenset[str], bool, bool]] = [
     ("send_poll", "messaging", D, False, BAI, False, False),
     ("send_list_message", "messaging", D, False, BAI_BUS, False, False),
     ("send_button_message", "messaging", D, False, ALL, False, False),
+    ("forward_message", "messaging", D, False, BAI_BUS, False, False),
     ("send_chat_presence", "messaging", W, False, BAI, False, False),
     ("react_to_message", "messaging", D, True, BAI_BUS, False, False),
     ("edit_message", "messaging", D, True, BAI, False, False),
     ("delete_message_for_everyone", "messaging", I, True, BAI, False, False),
     ("list_chats", "chats", R, True, ALL, False, False),
+    ("list_recent_messages", "chats", R, True, ALL, False, False),
     ("get_chat", "chats", R, True, ALL, False, False),
     ("read_messages", "chats", R, True, ALL, False, False),
     ("search_messages", "chats", R, True, ALL, False, False),
@@ -47,10 +49,11 @@ MASTER_TABLE: list[tuple[str, str, str, bool, frozenset[str], bool, bool]] = [
     ("get_message_status", "chats", R, True, ALL, False, False),
     ("view_message_image", "chats", R, True, BAI_BUS, False, False),
     ("download_message_media", "chats", W, True, BAI_BUS, False, False),
+    ("export_chat", "chats", W, True, BAI_BUS, False, False),
     ("mark_chat_read", "chats", D, True, BAI, False, False),
     ("mark_chat_unread", "chats", W, True, BAI, False, False),
     ("set_chat_archived", "chats", W, True, BAI, False, False),
-    ("find_contacts", "contacts", R, True, ALL, False, False),
+    ("find_chats", "contacts", R, True, ALL, False, False),
     ("check_whatsapp_numbers", "contacts", R, True, BAI, False, False),
     ("get_contact_profile", "contacts", R, True, BAI, False, False),
     ("get_business_profile", "contacts", R, True, BAI, False, False),
@@ -154,10 +157,10 @@ def _visible(connection: context.Connection) -> set[str]:
     return {spec.name for spec in registry.specs() if policy.visible(spec, connection)}
 
 
-def test_the_master_table_has_97_unique_rows():
+def test_the_master_table_has_100_unique_rows():
     names = [row[0] for row in MASTER_TABLE]
-    assert len(names) == 97
-    assert len(set(names)) == 97
+    assert len(names) == 100
+    assert len(set(names)) == 100
 
 
 def test_registered_specs_equal_the_master_table():
@@ -209,7 +212,7 @@ async def test_descriptions_are_short_first_lines_without_directives():
     server = MCPServer(name="descriptions")
     registry.register_all(server, mode="local")
     listed = await server.list_tools()
-    assert len(listed) == 97
+    assert len(listed) == 100
     for tool in listed:
         description = tool.description or ""
         first_line = description.splitlines()[0] if description else ""
@@ -219,16 +222,16 @@ async def test_descriptions_are_short_first_lines_without_directives():
         assert not re.search(r"(?m)^#", description), f"{tool.name}: description contains a Markdown heading"
 
 
-def test_registration_publishes_97_tools_locally_and_89_hosted():
+def test_registration_publishes_100_tools_locally_and_92_hosted():
     local = registry.register_all(MCPServer(name="local"), mode="local")
     hosted = registry.register_all(MCPServer(name="hosted"), mode="hosted")
-    assert len(local) == 97
-    assert len(hosted) == 89
+    assert len(local) == 100
+    assert len(hosted) == 92
     assert set(local) - set(hosted) == {row[0] for row in MASTER_TABLE if row[5]}
     assert local == [spec.name for spec in registry.specs()]
 
 
-def test_a_hosted_business_tenant_sees_exactly_38_tools():
+def test_a_hosted_business_tenant_sees_exactly_41_tools():
     visible = _visible(_hosted(BUSINESS))
     expected = {
         row[0]
@@ -236,7 +239,7 @@ def test_a_hosted_business_tenant_sees_exactly_38_tools():
         if BUSINESS in row[4] and not row[5] and row[2] != "irreversible" and row[0] not in DEFAULT_DENY_ROWS
     }
     assert visible == expected
-    assert len(visible) == 38
+    assert len(visible) == 41
 
 
 def test_a_read_only_hosted_tenant_sees_only_reads():
@@ -245,10 +248,10 @@ def test_a_read_only_hosted_tenant_sees_only_reads():
     assert all(registry.get(name).kind == "read" for name in visible)
 
 
-def test_a_local_baileys_instance_with_default_toolsets_sees_33_tools_once_irreversible_is_granted(make_connection):
+def test_a_local_baileys_instance_with_default_toolsets_sees_36_tools_once_irreversible_is_granted(make_connection):
     conn = make_connection(toolsets=DEFAULT_TOOLSETS, deny=policy.DEFAULT_DENY, deny_is_default=True)
     visible = _visible(conn)
-    assert len(visible) == 33
+    assert len(visible) == 36
     expected = {
         row[0]
         for row in MASTER_TABLE

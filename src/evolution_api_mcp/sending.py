@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from evolution_api_mcp import jid, messages
+from evolution_api_mcp import calls, jid, messages
 from evolution_api_mcp.client import EvolutionClient, EvolutionError, EvolutionHTTPError
 from evolution_api_mcp.context import Connection, InstanceIdentity, instance_path
 from evolution_api_mcp.errors import ToolExecutionError, raise_evolution_failure
@@ -16,7 +16,6 @@ _WINDOW_CLOSED_HINT = (
     " The 24-hour customer-service window is closed for this person; an approved template "
     "(send_template_message) can reopen the conversation."
 )
-_NOT_FOUND = "Message {id} was not found in this chat. Use read_messages to find its id."
 
 
 def recipient(identity: InstanceIdentity, chat_jid: str) -> str:
@@ -40,14 +39,39 @@ def reply_key(row: dict) -> dict:
     return {"key": key}
 
 
+async def reply_target(
+    client: EvolutionClient, conn: Connection, chat: str | None, reply_to_message_id: str | None
+) -> tuple[str, dict | None]:
+    """`(chat JID, quoted row)` of a send: the named chat, or the chat of the message being answered.
+
+    A reply may omit `chat`; when both are given the message must belong to that chat.
+    """
+    if reply_to_message_id is None:
+        if chat is None:
+            raise ToolExecutionError(
+                "Give chat, or reply_to_message_id to answer in that message's chat. Nothing was sent."
+            )
+        return await calls.resolve_chat(client, conn, chat, purpose="send"), None
+    chat_jid = await calls.resolve_chat(client, conn, chat, purpose="send") if chat is not None else None
+    row = await calls.stored_message(client, conn, reply_to_message_id, chat_jid, purpose="send")
+    key = row["key"] if isinstance(row.get("key"), dict) else {}
+    row_chat = key.get("remoteJid")
+    if not isinstance(row_chat, str) or not row_chat:
+        raise ToolExecutionError(f"Message {reply_to_message_id} has no stored chat to reply in. Nothing was sent.")
+    if chat_jid is not None and chat_jid not in (row_chat, key.get("remoteJidAlt")):
+        raise ToolExecutionError(
+            f"Message {reply_to_message_id} belongs to chat {row_chat}, not {chat_jid}. Nothing was sent."
+        )
+    return chat_jid or row_chat, row
+
+
 async def build_options(
     client: EvolutionClient,
     identity: InstanceIdentity,
     conn: Connection,
-    chat_jid: str,
     *,
     delay_ms: int | None,
-    reply_to_message_id: str | None,
+    quoted_row: dict | None,
     mention: list[str] | None,
     mention_everyone: bool,
     link_preview: bool | None,
@@ -59,24 +83,13 @@ async def build_options(
     if (mention or mention_everyone) and identity.integration != BAILEYS:
         raise ToolExecutionError("Mentions work only on WhatsApp Web (Baileys) instances.")
 
-    if reply_to_message_id:
-        try:
-            row = await messages.find_message(client, identity, reply_to_message_id, chat_jid)
-        except EvolutionError as exc:
-            await raise_evolution_failure(exc, phase="before_mutation")
-        if row is None:
-            raise ToolExecutionError(_NOT_FOUND.format(id=reply_to_message_id))
-        options["quoted"] = reply_key(row)
+    if quoted_row is not None:
+        options["quoted"] = reply_key(quoted_row)
 
     if mention:
         mentioned: list[str] = []
         for entry in mention:
-            try:
-                phone = jid.phone_of(jid.normalize_chat(entry))
-            except ValueError as exc:
-                raise ToolExecutionError(str(exc)) from None
-            if phone is None:
-                raise ToolExecutionError(f"Cannot mention {entry}: mentions take phone numbers.")
+            _, phone = await calls.resolve_person(client, conn, entry, purpose="send")
             if phone not in mentioned:
                 mentioned.append(phone)
         options["mentioned"] = mentioned

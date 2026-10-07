@@ -7,7 +7,7 @@ from pydantic import Field
 from evolution_api_mcp import calls, context, registry
 from evolution_api_mcp.errors import tool_result
 from evolution_api_mcp.tools import Chat
-from evolution_api_mcp.tools.contacts import compact, person
+from evolution_api_mcp.tools.contacts import compact
 
 LabelId = Annotated[
     str,
@@ -38,7 +38,7 @@ async def list_labels() -> str:
 
 async def _handle(chat: str, label_id: str, action: Literal["add", "remove"]) -> str:
     conn, client = await context.resolve()
-    chat_jid, digits = person(chat)
+    chat_jid, digits = await calls.resolve_person(client, conn, chat, purpose="write")
     body = await calls.call(
         client,
         conn.identity,

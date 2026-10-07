@@ -6,14 +6,17 @@ from evolution_api_mcp.errors import ToolExecutionError
 from evolution_api_mcp.tools.contacts import (
     block_contact,
     check_whatsapp_numbers,
-    find_contacts,
+    find_chats,
     get_business_profile,
     get_contact_profile,
     unblock_contact,
 )
 from tests.conftest import INSTANCE
+from tests.fakes import program_directory
 
 FIND_CONTACTS = f"/chat/findContacts/{INSTANCE}"
+FETCH_GROUPS = f"/group/fetchAllGroups/{INSTANCE}"
+FIND_MESSAGES = f"/chat/findMessages/{INSTANCE}"
 WHATSAPP_NUMBERS = f"/chat/whatsappNumbers/{INSTANCE}"
 FETCH_PROFILE = f"/chat/fetchProfile/{INSTANCE}"
 FETCH_BUSINESS = f"/chat/fetchBusinessProfile/{INSTANCE}"
@@ -40,135 +43,145 @@ def _contact(remote, push_name=None, *, saved=True):
     }
 
 
-def _people(count, *, prefix="Filler", start=0):
-    return [_contact(f"39{3000000000 + start + n}@s.whatsapp.net", f"{prefix} {start + n}") for n in range(count)]
+# --- find_chats ------------------------------------------------------------------------------------------------
+
+TEAM = "120363012345678901@g.us"
 
 
-def _paged(pages):
-    """Answer findContacts by the requested page number, like Evolution's offset/page pagination."""
-
-    def handler(request):
-        assert request.json["offset"] == 500
-        page = request.json["page"]
-        return 200, pages[page - 1] if page <= len(pages) else []
-
-    return handler
+def _directory(evo, *, contacts=(), groups=()):
+    program_directory(evo, INSTANCE, contacts=contacts, groups=groups)
 
 
-# --- find_contacts ---------------------------------------------------------------------------------------------
+def _ranked_contacts():
+    return [
+        _contact("393330000001@s.whatsapp.net", "Ana"),
+        _contact("393330000002@s.whatsapp.net", "Anastasia Verdi"),
+        _contact("393330000003@s.whatsapp.net", "Maria Ana Neri"),
+        _contact("393330000004@s.whatsapp.net", "Banana Split"),
+        _contact("393330000005@s.whatsapp.net", "Bob Bianchi"),
+    ]
 
 
 @pytest.mark.anyio
-async def test_find_contacts_by_phone_looks_up_that_jid_and_projects_the_row(evo, bound):
-    evo.on("POST", FIND_CONTACTS, json=[_contact(ANA, "Ana Rossi")])
+async def test_find_chats_ranks_exact_then_prefix_then_word_then_substring_and_projects_each_chat(evo, bound):
+    _directory(evo, contacts=_ranked_contacts(), groups=[{"id": TEAM, "subject": "Team Ana"}])
     with bound(evo):
-        result = json.loads(await find_contacts(phone="+39 333 123 4567"))
+        result = json.loads(await find_chats(query="ana"))
 
-    assert evo.last("POST", FIND_CONTACTS).json == {"where": {"remoteJid": ANA}}
+    assert [(r.method, r.path) for r in evo.requests] == [
+        ("POST", FIND_CONTACTS),
+        ("GET", FETCH_GROUPS),
+        ("POST", FIND_MESSAGES),
+        ("GET", "/instance/fetchInstances"),
+    ]
     assert result == {
-        "contacts": [{"chat_id": ANA, "name": "Ana Rossi", "phone": "393331234567", "is_group": False, "saved": True}],
-        "offset": 0,
-        "limit": 20,
-        "has_more": False,
-        "scanned": 1,
+        "query": "ana",
+        "chats": [
+            {
+                "chat_id": "393330000001@s.whatsapp.net",
+                "name": "Ana",
+                "kind": "person",
+                "phone": "393330000001",
+                "saved": True,
+            },
+            {
+                "chat_id": "393330000002@s.whatsapp.net",
+                "name": "Anastasia Verdi",
+                "kind": "person",
+                "phone": "393330000002",
+                "saved": True,
+            },
+            {
+                "chat_id": "393330000003@s.whatsapp.net",
+                "name": "Maria Ana Neri",
+                "kind": "person",
+                "phone": "393330000003",
+                "saved": True,
+            },
+            {"chat_id": TEAM, "name": "Team Ana", "kind": "group"},
+            {
+                "chat_id": "393330000004@s.whatsapp.net",
+                "name": "Banana Split",
+                "kind": "person",
+                "phone": "393330000004",
+                "saved": True,
+            },
+        ],
+        "total": 5,
     }
     assert "internal-instance-id" not in json.dumps(result)
 
 
 @pytest.mark.anyio
-async def test_find_contacts_by_phone_accepts_a_group_id_only_with_include_groups(evo, bound):
-    evo.on("POST", FIND_CONTACTS, json=[_contact(GROUP, "Family")])
+async def test_find_chats_kind_limits_the_search_to_people_or_groups_and_limit_cuts_the_list(evo, bound):
+    _directory(evo, contacts=_ranked_contacts(), groups=[{"id": TEAM, "subject": "Team Ana"}])
     with bound(evo):
-        hidden = json.loads(await find_contacts(phone=GROUP))
-        shown = json.loads(await find_contacts(phone=GROUP, include_groups=True))
+        people = json.loads(await find_chats(query="ana", kind="people", limit=2))
+        groups = json.loads(await find_chats(query="ana", kind="groups"))
 
-    assert hidden["contacts"] == []
-    assert shown["contacts"] == [{"chat_id": GROUP, "name": "Family", "is_group": True, "saved": True}]
+    assert [c["name"] for c in people["chats"]] == ["Ana", "Anastasia Verdi"]
+    assert people["total"] == 4
+    assert [c["chat_id"] for c in groups["chats"]] == [TEAM]
+    assert groups["total"] == 1
 
 
 @pytest.mark.anyio
-async def test_find_contacts_scans_pages_and_filters_names_without_regard_to_case(evo, bound):
-    page1 = _people(498) + [_contact(GROUP, "Anastasia Family")]
-    page1.append(_contact(BOB, "Bob Bianchi"))
-    page2 = [_contact(ANA, "ana rossi"), _contact("393330000001@s.whatsapp.net", None, saved=False)]
-    evo.on("POST", FIND_CONTACTS, handler=_paged([page1, page2]))
+async def test_find_chats_matches_names_without_regard_to_case_and_accents(evo, bound):
+    _directory(evo, contacts=[_contact(ANA, "Mário Rossi")])
     with bound(evo):
-        result = json.loads(await find_contacts(name="ANA"))
+        result = json.loads(await find_chats(query="MARIO ros"))
 
-    assert [r.json for r in evo.requests] == [
-        {"where": {}, "offset": 500, "page": 1},
-        {"where": {}, "offset": 500, "page": 2},
-    ]
-    assert result["contacts"] == [
-        {"chat_id": ANA, "name": "ana rossi", "phone": "393331234567", "is_group": False, "saved": True}
-    ]
-    assert result["scanned"] == 502
-    assert result["has_more"] is False
-    assert "note" not in result
+    assert [c["chat_id"] for c in result["chats"]] == [ANA]
 
 
 @pytest.mark.anyio
-async def test_find_contacts_includes_groups_when_asked(evo, bound):
-    evo.on("POST", FIND_CONTACTS, handler=_paged([[_contact(GROUP, "Team Ana"), _contact(ANA, "Ana")]]))
+async def test_find_chats_with_three_digits_matches_phone_numbers_not_names(evo, bound):
+    _directory(evo, contacts=[_contact(ANA, "Ana Rossi"), _contact(BOB, "Room 333 Bob")])
     with bound(evo):
-        people = json.loads(await find_contacts(name="ana"))
-        both = json.loads(await find_contacts(name="ana", include_groups=True))
+        by_digits = json.loads(await find_chats(query="+39 333 12"))
+        by_name = json.loads(await find_chats(query="333 bob"))
 
-    assert [c["chat_id"] for c in people["contacts"]] == [ANA]
-    assert [c["chat_id"] for c in both["contacts"]] == [GROUP, ANA]
+    assert [c["chat_id"] for c in by_digits["chats"]] == [ANA]
+    assert [c["chat_id"] for c in by_name["chats"]] == [BOB]
 
 
 @pytest.mark.anyio
-async def test_find_contacts_without_filters_lists_unsaved_people_too(evo, bound):
-    unsaved = _contact(BOB, None, saved=False)
-    evo.on("POST", FIND_CONTACTS, handler=_paged([[_contact(ANA, "Ana"), unsaved]]))
+async def test_find_chats_names_a_number_only_contact_by_its_phone_and_marks_it_unsaved(evo, bound):
+    _directory(evo, contacts=[_contact(BOB, None, saved=False)])
     with bound(evo):
-        result = json.loads(await find_contacts())
+        result = json.loads(await find_chats(query="393339876"))
 
-    assert result["contacts"] == [
-        {"chat_id": ANA, "name": "Ana", "phone": "393331234567", "is_group": False, "saved": True},
-        {"chat_id": BOB, "phone": "393339876543", "is_group": False, "saved": False},
-    ]
+    assert result["chats"] == [{"chat_id": BOB, "kind": "person", "phone": "393339876543", "saved": False}]
 
 
 @pytest.mark.anyio
-async def test_find_contacts_pages_with_offset_and_limit_and_stops_scanning_early(evo, bound):
-    page1 = _people(500, prefix="Ana")
-    evo.on("POST", FIND_CONTACTS, handler=_paged([page1, _people(500, prefix="Ana", start=500)]))
+async def test_find_chats_skips_status_and_broadcast_chats(evo, bound):
+    _directory(evo, contacts=[_contact("status@broadcast", "Status Ana"), _contact(ANA, "Ana")])
     with bound(evo):
-        result = json.loads(await find_contacts(name="ana", limit=3, offset=2))
+        result = json.loads(await find_chats(query="ana"))
 
-    assert len(evo.requests) == 1  # offset + limit + 1 matches were found on the first page
-    assert [c["name"] for c in result["contacts"]] == ["Ana 2", "Ana 3", "Ana 4"]
-    assert (result["offset"], result["limit"], result["has_more"]) == (2, 3, True)
-    assert result["scanned"] == 500
+    assert [c["chat_id"] for c in result["chats"]] == [ANA]
+    assert result["total"] == 1
 
 
 @pytest.mark.anyio
-async def test_find_contacts_reports_when_the_scan_limit_cut_the_search_short(evo, bound):
-    evo.on("POST", FIND_CONTACTS, handler=lambda request: (200, _people(500, start=500 * request.json["page"])))
+async def test_find_chats_finds_nothing_on_an_empty_instance(evo, bound):
+    _directory(evo)
     with bound(evo):
-        result = json.loads(await find_contacts(name="nobody"))
+        result = json.loads(await find_chats(query="ana"))
 
-    assert len(evo.requests) == 10
-    assert result["contacts"] == []
-    assert result["scanned"] == 5000
-    assert result["note"] == "Only the first 5000 stored contacts were scanned; narrow with name or phone."
+    assert result == {"query": "ana", "chats": [], "total": 0}
 
 
 @pytest.mark.anyio
-async def test_find_contacts_empty_store(evo, bound):
-    evo.on("POST", FIND_CONTACTS, json=[])
+async def test_find_chats_says_which_list_evolution_did_not_return(evo, bound):
+    _directory(evo, contacts=[_contact(ANA, "Ana")])
+    evo.on("GET", FETCH_GROUPS, status=400, json={"message": "no groups"})
     with bound(evo):
-        result = json.loads(await find_contacts(name="ana"))
+        result = json.loads(await find_chats(query="ana"))
 
-    assert result == {"contacts": [], "offset": 0, "limit": 20, "has_more": False, "scanned": 0}
-
-
-@pytest.mark.anyio
-async def test_find_contacts_rejects_a_bad_phone(evo, bound):
-    with bound(evo), pytest.raises(ToolExecutionError, match="Unsupported chat id"):
-        await find_contacts(phone="x@foo.com")
+    assert [c["chat_id"] for c in result["chats"]] == [ANA]
+    assert result["note"] == "Evolution did not return the groups list, so names there were not checked."
 
 
 # --- check_whatsapp_numbers ------------------------------------------------------------------------------------

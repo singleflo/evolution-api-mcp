@@ -92,9 +92,13 @@ def _participant(row: object) -> dict:
     }
 
 
-def _phones(values: list[str]) -> list[str]:
-    """Normalized digits in the given order, without duplicates (Evolution rejects repeated numbers)."""
-    return list(dict.fromkeys(calls.phone(value) for value in values))
+async def _phones(
+    client: EvolutionClient, conn: context.Connection, values: list[str], *, purpose: calls.Purpose
+) -> list[str]:
+    """Digits of each person (numbers, chat ids or exact names) in the given order, without duplicates (Evolution
+    rejects repeated numbers)."""
+    digits = [(await calls.resolve_person(client, conn, value, purpose=purpose))[1] for value in values]
+    return list(dict.fromkeys(digits))
 
 
 def _invite_url(code: object) -> str | None:
@@ -133,13 +137,14 @@ def _participant_results(body: object) -> list[dict]:
 
 async def _update_participants(group: str, action: str, participants: list[str]) -> str:
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="write")
+    numbers = await _phones(client, conn, participants, purpose="write")
     body = await calls.call(
         client,
         conn.identity,
         "POST",
         "group/updateParticipant",
-        json={"groupJid": group_jid, "action": action, "participants": _phones(participants)},
+        json={"groupJid": group_jid, "action": action, "participants": numbers},
         write=True,
     )
     return tool_result({"group_id": group_jid, "action": action, "results": _participant_results(body)})
@@ -147,7 +152,7 @@ async def _update_participants(group: str, action: str, participants: list[str])
 
 async def _update_field(group: str, endpoint: str, field: str, body: dict) -> str:
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="write")
     await calls.call(client, conn.identity, "POST", endpoint, json={"groupJid": group_jid, **body}, write=True)
     return tool_result({"group_id": group_jid, "updated": field})
 
@@ -213,7 +218,7 @@ async def get_group(group: Group) -> str:
     Web (Baileys) instances only.
     """
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="read")
     row = await _group_row(client, conn.identity, group_jid)
     participants = row.get("participants") if isinstance(row.get("participants"), list) else []
     summary = _summary(row)
@@ -253,7 +258,7 @@ async def get_group_invite_link(group: Group) -> str:
     Available on WhatsApp Web (Baileys) instances only.
     """
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="read")
     body = _dict(await calls.call(client, conn.identity, "GET", "group/inviteCode", params={"groupJid": group_jid}))
     code = body.get("inviteCode")
     return tool_result(
@@ -331,7 +336,7 @@ async def create_group(
     (Baileys) instances only.
     """
     conn, client = await context.resolve()
-    numbers = _phones(participants)
+    numbers = await _phones(client, conn, participants, purpose="send")
     body: dict = {"subject": subject, "participants": numbers}
     if description is not None:
         body["description"] = description
@@ -445,7 +450,7 @@ async def update_group_settings(
             "Give at least one of only_admins_send and only_admins_edit_info. Nothing was changed."
         )
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="write")
     steps: list[tuple[str, bool, str]] = []
     if only_admins_send is not None:
         steps.append(("only_admins_send", only_admins_send, "announcement" if only_admins_send else "not_announcement"))
@@ -499,7 +504,7 @@ async def set_disappearing_messages(
     This number needs to be allowed to change group settings. Available on WhatsApp Web (Baileys) instances only.
     """
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="write")
     await calls.call(
         client,
         conn.identity,
@@ -602,14 +607,15 @@ async def send_group_invite(
     group's invite link. Available on WhatsApp Web (Baileys) instances only.
     """
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="write")
+    recipients = await _phones(client, conn, numbers, purpose="send")
     body = _dict(
         await calls.call(
             client,
             conn.identity,
             "POST",
             "group/sendInvite",
-            json={"groupJid": group_jid, "description": message, "numbers": _phones(numbers)},
+            json={"groupJid": group_jid, "description": message, "numbers": recipients},
             write=True,
         )
     )
@@ -631,7 +637,7 @@ async def revoke_group_invite_link(group: Group) -> str:
     This number needs to be a group admin. Available on WhatsApp Web (Baileys) instances only.
     """
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="write")
     body = _dict(
         await calls.call(
             client, conn.identity, "POST", "group/revokeInviteCode", json={"groupJid": group_jid}, write=True
@@ -689,6 +695,6 @@ async def leave_group(group: Group) -> str:
     (Baileys) instances only.
     """
     conn, client = await context.resolve()
-    group_jid = calls.group(group)
+    group_jid = await calls.resolve_group(client, conn, group, purpose="write")
     await calls.call(client, conn.identity, "DELETE", "group/leaveGroup", params={"groupJid": group_jid}, write=True)
     return tool_result({"left": True, "group_id": group_jid})

@@ -8,6 +8,7 @@ from evolution_api_mcp import errors
 from evolution_api_mcp.errors import ToolExecutionError
 from evolution_api_mcp.tools import groups
 from tests.conftest import INSTANCE
+from tests.fakes import program_directory
 
 GROUP = "120363012345678901@g.us"
 GROUP_DIGITS = "120363012345678901"
@@ -184,6 +185,28 @@ async def test_get_group_projects_details_and_participants(evo, bound):
 
 
 @pytest.mark.anyio
+async def test_get_group_and_membership_tools_take_a_group_name_and_participant_names(evo, bound):
+    program_directory(
+        evo,
+        INSTANCE,
+        contacts=[{"remoteJid": "393330003333@s.whatsapp.net", "pushName": "Ana", "isSaved": True}],
+        groups=[{"id": GROUP, "subject": "Team"}],
+    )
+    evo.on("GET", _path("findGroupInfos"), json=_group_row(participants=[]))
+    evo.on("POST", _path("updateParticipant"), json={"updateParticipants": []})
+    with bound(evo):
+        read = json.loads(await groups.get_group("team"))
+        await groups.add_group_participants("Team", ["Ana", "393331112222"])
+
+    assert read["group_id"] == GROUP
+    assert evo.last("POST", _path("updateParticipant")).json == {
+        "groupJid": GROUP,
+        "action": "add",
+        "participants": ["393330003333", "393331112222"],
+    }
+
+
+@pytest.mark.anyio
 async def test_get_group_reports_ephemeral_duration_when_evolution_returns_it(evo, bound):
     evo.on("GET", _path("findGroupInfos"), json=_group_row(participants=[], ephemeralDuration=604800))
     with bound(evo):
@@ -240,8 +263,8 @@ async def test_get_group_passes_evolutions_refusal_through(evo, bound):
 
 @pytest.mark.anyio
 async def test_group_tools_refuse_ids_that_are_not_groups_before_calling_evolution(evo, bound):
-    with bound(evo), pytest.raises(ToolExecutionError, match="Unsupported group id 'not a group'"):
-        await groups.get_group("not a group")
+    with bound(evo), pytest.raises(ToolExecutionError, match="Unsupported group id 'abc@g.us'"):
+        await groups.get_group("abc@g.us")
     assert evo.requests == []
 
 
