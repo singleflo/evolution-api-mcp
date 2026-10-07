@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-10-07
 
 First release. An MCP server that operates one Evolution API v2 instance (one WhatsApp number) with that instance's own
 token, as a local stdio server and as a hosted Streamable HTTP server.
