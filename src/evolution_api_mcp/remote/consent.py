@@ -428,8 +428,43 @@ def _toolset_options(selected: frozenset[str]) -> str:
     return "".join(rows)
 
 
+_KNOWN_HOSTS = frozenset({"claude.ai", "claude.com", "chatgpt.com", "localhost", "127.0.0.1", "::1"})
+_KNOWN_SCHEMES = frozenset({"cursor", "vscode", "vscode-insiders", "windsurf", "zed", "claude", "codex"})
+_UNKNOWN_CLIENT_WARNING = (
+    "This application is not one of the assistants this server knows."
+    " Only continue if you started this connection yourself."
+)
+_NAME_DISPLAY_CHARS = 80
+
+
+def _unknown_client(redirect_uri: str) -> bool:
+    """True when the redirect leads somewhere other than the assistants this server knows: https or http to a host
+    outside the known list, or a custom application scheme outside the known list. Anyone can register a client, so
+    the page says so rather than let a stranger's name pass for a familiar one."""
+    try:
+        parts = urlsplit(redirect_uri)
+        host = parts.hostname
+    except ValueError:
+        return True
+    scheme = parts.scheme.lower()
+    if scheme in ("https", "http"):
+        return host not in _KNOWN_HOSTS
+    return scheme not in _KNOWN_SCHEMES
+
+
+def _display_name(name: str) -> str:
+    """The client's own name, cut to 80 characters with an ellipsis; the caller still escapes it."""
+    return name if len(name) <= _NAME_DISPLAY_CHARS else name[:_NAME_DISPLAY_CHARS] + "…"
+
+
 def _form_html(deps: ConsentDeps, shown: _FormState) -> str:
     error = f'<p class="error" role="alert">{html.escape(shown.error)}</p>' if shown.error else ""
+    warning = (
+        f'<p class="error" role="note">{html.escape(_UNKNOWN_CLIENT_WARNING)}</p>'
+        if _unknown_client(shown.redirect_uri)
+        else ""
+    )
+    client_name = html.escape(_display_name(shown.client_name))
     policy_options = "".join(
         '<label class="policy-option">'
         f'<input type="radio" name="policy" value="{value}"{" checked" if shown.policy == value else ""}>'
@@ -443,16 +478,16 @@ def _form_html(deps: ConsentDeps, shown: _FormState) -> str:
         "Connect your Evolution API instance",
         (
             '<p class="lead">'
-            f"<strong>{html.escape(shown.client_name)}</strong> is asking to reach one Evolution API instance on"
+            f"<strong>{client_name}</strong> is asking to reach one Evolution API instance on"
             " your behalf. Give the address of your Evolution server and that instance's token, and choose what"
             " it may do.</p>"
             '<dl class="facts">'
-            f"<div><dt>Requested by</dt><dd>{html.escape(shown.client_name)}</dd></div>"
+            f"<div><dt>Requested by</dt><dd>{client_name}</dd></div>"
             f"<div><dt>Access returns to</dt><dd><code>{html.escape(shown.redirect_uri)}</code></dd></div>"
             f"<div><dt>Scope</dt><dd><code>{html.escape(shown.scopes)}</code></dd></div>"
             "</dl>"
             f'<p class="policy-note">{html.escape(_scope_sentence(deps.allowed_integrations))}</p>'
-            f"{error}"
+            f"{warning}{error}"
             '<form method="post" action="/consent" class="consent-form">'
             f'<input type="hidden" name="req" value="{html.escape(shown.req)}">'
             '<p class="field"><label for="base_url">Evolution server address</label>'

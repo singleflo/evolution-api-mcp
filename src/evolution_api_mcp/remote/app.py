@@ -58,6 +58,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from evolution_api_mcp import __version__, context, paths, policy, registry, tenant, tools
 from evolution_api_mcp.remote import consent, files, ui
 from evolution_api_mcp.remote.auth import EvolutionAuthProvider
+from evolution_api_mcp.remote.registration import RegistrationGuard
 from evolution_api_mcp.remote.store import Store
 from evolution_api_mcp.server import REPO_URL, build_server
 from evolution_api_mcp.toolsets import TOOLSET_ORDER, TOOLSETS
@@ -485,9 +486,10 @@ SWEEP_SECONDS = 3600
 
 
 def _sweep_once(store: Store) -> None:
-    """The retention sweeps in one place: expired OAuth rows, tenants idle past the window (their disk artifacts go
-    with them), expired file links."""
+    """The retention sweeps in one place: expired OAuth rows, client registrations nobody used for 30 days, tenants
+    idle past the window (their disk artifacts go with them), expired file links."""
     store.purge_expired()
+    store.purge_unused_clients()
     for subject in store.purge_idle_tenants():
         files.purge_tenant_artifacts(subject)
     files.purge_expired_files()
@@ -582,6 +584,8 @@ def build_app(settings: RemoteSettings) -> Starlette:
             allowed_origins=[settings.public_url, "https://claude.ai", "https://chatgpt.com"],
         ),
     )
+    # Added first, so it sits inside SecurityHeaders: its refusals carry the same headers as everything else.
+    app.add_middleware(RegistrationGuard, store=store)
     app.add_middleware(SecurityHeaders)
     app.state.session_manager = mcp._lowlevel_server._session_manager
     # consent.py reads request.app.state.consent_deps; request.app is THIS app (custom routes join it unmounted).

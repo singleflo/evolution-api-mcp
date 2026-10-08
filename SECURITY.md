@@ -76,6 +76,28 @@ folder, replacing an earlier export of the same chat and period), with sanitised
   its tenant is removed, and tenants unused for 90 days are deleted.
 * Files a tool produces are served from an unguessable link that expires after 15 minutes and is deleted afterwards.
 
+### Public client registration
+
+Registration (`POST /register`) is open by design: the MCP authorization specification requires it, and Claude.ai and
+ChatGPT register themselves this way. Registering gives a stranger nothing on its own, because every connection still
+needs a person to open the consent page, which names the client, shows its redirect address and asks for that person's
+own instance token. What is validated and limited:
+
+* The request body is at most 16 KiB. `redirect_uris` holds 1 to 5 entries of at most 2048 characters, with no
+  fragment. Allowed schemes are `https`, `http` only for `localhost`, `127.0.0.1` and `[::1]`, and custom application
+  schemes such as `cursor://` or `vscode://`; `javascript`, `data`, `file`, `vbscript`, `about`, `blob`, `ftp`, `ws`,
+  `wss` and `http` to any other host are refused. `client_name` is at most 200 characters and `client_uri`, `logo_uri`,
+  `tos_uri` and `policy_uri` at most 2048 each. Refusals are RFC 7591 errors and store nothing.
+* At most 10 registrations per minute per client address (the address the single proxy in front of the server
+  appended to `X-Forwarded-For`) and 200 per hour for the whole server; beyond that the answer is 429 with
+  `Retry-After`.
+* At most 5,000 stored registrations (503 beyond), and registrations that no pending authorisation, code or token uses
+  are deleted after 30 days by the hourly sweep.
+* The consent page warns when the client is not one of the assistants this server knows, and shortens very long
+  client names.
+* A redirect must match a registered one exactly at `/authorize`, and PKCE with S256 is required, so a registered
+  client cannot receive another client's authorization code.
+
 ### Sending limits
 
 Every send passes a delay and a per-connection rate limit (30 changes per minute by default). These reduce accidental

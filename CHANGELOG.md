@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - Unreleased
+
+### Security
+- **Hardened the public client registration endpoint** (`POST /register`), which stays open as the MCP authorization
+  specification requires. It now refuses `javascript:`, `data:`, `file:`, `vbscript:`, `about:`, `blob:`, `ftp:`,
+  `ws:`, `wss:` and non-loopback `http:` redirect URIs and redirect URIs with a fragment; accepts 1 to 5 redirect URIs
+  of at most 2048 characters, a client name of at most 200 characters and a request of at most 16 KiB; allows 10
+  registrations per minute per client address and 200 per hour overall (429 with `Retry-After`); and stops at 5,000
+  stored registrations (503). Registrations unused for 30 days are deleted by the hourly sweep.
+- The consent page warns when a client is not one of the assistants the server knows (by redirect host or application
+  scheme) and shortens client names to 80 characters.
+
 ## [1.0.0] - 2026-10-07
 
 First release. An MCP server that operates one Evolution API v2 instance (one WhatsApp number) with that instance's own

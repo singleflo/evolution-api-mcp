@@ -246,6 +246,11 @@ class Store:
             row = db.execute("SELECT client_json FROM oauth_clients WHERE client_id = ?", (client_id,)).fetchone()
         return OAuthClientInformationFull.model_validate_json(self._fernet.decrypt(row[0])) if row else None
 
+    def client_count(self) -> int:
+        """How many dynamic registrations are stored; the registration endpoint refuses to grow the table past a cap."""
+        with self._db() as db:
+            return db.execute("SELECT COUNT(*) FROM oauth_clients").fetchone()[0]
+
     # -------------------------------------------------- pending authorisations
     def put_pending(self, row: PendingAuthz) -> None:
         with self._db() as db:
@@ -501,6 +506,21 @@ class Store:
             db.execute("DELETE FROM auth_codes WHERE expires_at <= ?", (now,))
             db.execute("DELETE FROM access_tokens WHERE expires_at <= ?", (now,))
             db.execute("DELETE FROM refresh_tokens WHERE revoked = 1 OR expires_at <= ?", (now,))
+
+    def purge_unused_clients(self, days: int = 30) -> int:
+        """Delete registrations older than `days` that nothing references: no pending authorisation, code, access
+        token or refresh token names the client. Registration is open to anyone, so rows nobody connected through must
+        not live forever. Returns the number removed."""
+        with self._db(immediate=True) as db:
+            cursor = db.execute(
+                "DELETE FROM oauth_clients WHERE created_at <= :cutoff"
+                " AND NOT EXISTS (SELECT 1 FROM pending_authz WHERE client_id = oauth_clients.client_id)"
+                " AND NOT EXISTS (SELECT 1 FROM auth_codes WHERE client_id = oauth_clients.client_id)"
+                " AND NOT EXISTS (SELECT 1 FROM access_tokens WHERE client_id = oauth_clients.client_id)"
+                " AND NOT EXISTS (SELECT 1 FROM refresh_tokens WHERE client_id = oauth_clients.client_id)",
+                {"cutoff": _iso(_now() - timedelta(days=days))},
+            )
+            return cursor.rowcount
 
     def purge_idle_tenants(self, days: int = 90) -> list[str]:
         """Forget tenants unused for `days` that hold no live token — the
