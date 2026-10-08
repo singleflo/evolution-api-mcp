@@ -509,6 +509,43 @@ def test_verification_stops_when_too_many_are_already_running_and_the_counter_re
     assert consent._verifications_running == 0
 
 
+ADDRESS_REFUSAL = "Too many connection attempts from your address. Try again in a minute."
+
+
+def test_one_address_may_run_only_one_verification_at_a_time(store, verify, provider):
+    """Given one verification already running for an address, When the same address posts again, Then it is told to
+    wait and nothing is dialled; another address is unaffected."""
+    tc = client(store, provider)
+    assert tc.app.state.consent_deps.verification_gate.enter("203.0.113.7")
+
+    refused = tc.post("/consent", data=_form(), headers={"X-Forwarded-For": "spoof, 203.0.113.7"})
+    other = tc.post("/consent", data=_form(), headers={"X-Forwarded-For": "203.0.113.8"})
+
+    assert refused.status_code == 200 and ADDRESS_REFUSAL in refused.text
+    assert "203.0.113.7" not in refused.text
+    assert len(verify.calls) == 1  # only the other address got through
+    assert other.status_code == 302
+
+
+def test_the_slot_of_an_address_is_released_when_its_verification_ends(store, verify, provider):
+    tc = client(store, provider)
+
+    assert tc.post("/consent", data=_form(), headers={"X-Forwarded-For": "203.0.113.7"}).status_code == 302
+    assert tc.post("/consent", data=_form(), headers={"X-Forwarded-For": "203.0.113.7"}).status_code == 302
+
+
+def test_one_address_may_start_six_verifications_a_minute(store, verify, provider):
+    tc = client(store, provider)
+    for _ in range(6):
+        assert tc.post("/consent", data=_form(), headers={"X-Forwarded-For": "203.0.113.7"}).status_code == 302
+
+    refused = tc.post("/consent", data=_form(), headers={"X-Forwarded-For": "203.0.113.7"})
+
+    assert refused.status_code == 200 and ADDRESS_REFUSAL in refused.text
+    assert len(verify.calls) == 6
+    assert tc.post("/consent", data=_form(), headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 302
+
+
 # ------------------------------------------------------- integration rule
 def test_a_baileys_instance_is_refused_with_the_business_only_message_and_nothing_is_stored(
     db_path, store, verify, provider

@@ -84,17 +84,31 @@ needs a person to open the consent page, which names the client, shows its redir
 own instance token. What is validated and limited:
 
 * The request body is at most 16 KiB. `redirect_uris` holds 1 to 5 entries of at most 2048 characters, with no
-  fragment. Allowed schemes are `https`, `http` only for `localhost`, `127.0.0.1` and `[::1]`, and custom application
-  schemes such as `cursor://` or `vscode://`; `javascript`, `data`, `file`, `vbscript`, `about`, `blob`, `ftp`, `ws`,
-  `wss` and `http` to any other host are refused. `client_name` is at most 200 characters and `client_uri`, `logo_uri`,
-  `tos_uri` and `policy_uri` at most 2048 each. Refusals are RFC 7591 errors and store nothing.
-* At most 10 registrations per minute per client address (the address the single proxy in front of the server
-  appended to `X-Forwarded-For`) and 200 per hour for the whole server; beyond that the answer is 429 with
-  `Retry-After`.
-* At most 5,000 stored registrations (503 beyond), and registrations that no pending authorisation, code or token uses
-  are deleted after 30 days by the hourly sweep.
-* The consent page warns when the client is not one of the assistants this server knows, and shortens very long
-  client names.
+  fragment and no backslash. Each is checked in the form the server actually stores (as parsed by pydantic's
+  `AnyUrl`), not as submitted. Allowed schemes are an allowlist: `https`; `http` only for `localhost`, `127.0.0.1`
+  and `[::1]`; and custom application schemes only when the scheme contains a dot (reverse-DNS, RFC 8252, such as
+  `com.example.app`) or is one of `cursor`, `vscode`, `vscode-insiders`, `windsurf`, `zed`, `claude` and `codex`.
+  Everything else (`javascript`, `data`, `file`, `itms-services`, `ms-msdt`, `search-ms`, `mailto`, `tel`,
+  `chrome-extension`, `view-source`, `ftp`, `ws`, `wss`, `http` to any other host, ...) is refused. `client_name` is at
+  most 200 characters and `client_uri`, `logo_uri`, `tos_uri` and `policy_uri` at most 2048 each. Refusals are
+  RFC 7591 errors, readable by in-browser clients (they carry the same CORS header as the SDK's own answers), and
+  store nothing.
+* At most 10 registrations per minute and 30 per hour per client address (the address the single proxy in front of
+  the server appended to `X-Forwarded-For`); beyond that the answer is 429 with `Retry-After`. A server-wide safety
+  valve of 1,000 registrations per hour counts only registrations that were actually stored (201), so requests the
+  server refuses can never use up the quota that Claude.ai and ChatGPT need.
+* At most 5,000 stored registrations. When the table is full the oldest client that never completed a connection is
+  evicted to make room; the answer is 503 only when every stored client has been used. A client that never completed a
+  code exchange is deleted after 2 days (a pending authorisation does not keep it alive); one that did is deleted
+  after 90 days without use (a code exchange or refresh counts as use) once no token refers to it. The hourly sweep
+  does this.
+* `GET /authorize` is limited to 60 requests per minute per client address and 30 per minute per `client_id` (429
+  with `Retry-After`), and at most 20,000 pending authorisations are held (503 beyond, after expired ones are
+  dropped; expired ones are also cleared every minute).
+* The consent page warns for every redirect that is not https or loopback to one of the assistants this server knows,
+  including every custom scheme (a scheme alone does not identify an application), strips bidirectional and other
+  invisible characters from client names and shortens them to 80 characters. The connection check behind the consent
+  form allows 4 at a time server-wide and, per client address, 1 at a time and 6 per minute.
 * A redirect must match a registered one exactly at `/authorize`, and PKCE with S256 is required, so a registered
   client cannot receive another client's authorization code.
 

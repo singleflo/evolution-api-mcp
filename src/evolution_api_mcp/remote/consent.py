@@ -28,7 +28,8 @@ import logging
 import multiprocessing
 import secrets
 import socket
-from dataclasses import dataclass, replace
+import unicodedata
+from dataclasses import dataclass, field, replace
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from typing import Literal, Protocol
@@ -43,6 +44,7 @@ from evolution_api_mcp import discovery, netguard
 from evolution_api_mcp.client import EvolutionClient, EvolutionHTTPError, EvolutionUncertain, EvolutionUnreachable
 from evolution_api_mcp.registry import BUSINESS
 from evolution_api_mcp.remote import ui
+from evolution_api_mcp.remote.registration import SlidingWindowLimiter, client_address
 from evolution_api_mcp.remote.store import PendingAuthz, Store, key_hash
 from evolution_api_mcp.tenant import Tenant
 from evolution_api_mcp.toolsets import DEFAULT_TOOLSETS, TOOLSET_ORDER, TOOLSETS
@@ -65,6 +67,26 @@ class ConsentProvider(Protocol):
     def refuse_consent(self, pending_id: str) -> str: ...
 
 
+class _AddressGate:
+    """Per client address: one verification at a time and a handful a minute, on top of the global cap.
+
+    The address is the one `client_address` derives (rightmost X-Forwarded-For entry); it is only ever a dict key
+    and is never logged or shown. Single event loop, no await between `enter`'s check and its update, so no lock."""
+
+    def __init__(self) -> None:
+        self._running: set[str] = set()
+        self._recent = SlidingWindowLimiter([(MAX_VERIFICATIONS_PER_ADDRESS_PER_MINUTE, 60.0)])
+
+    def enter(self, address: str) -> bool:
+        if address in self._running or self._recent.acquire(address) is not None:
+            return False
+        self._running.add(address)
+        return True
+
+    def leave(self, address: str) -> None:
+        self._running.discard(address)
+
+
 @dataclass(frozen=True, slots=True)
 class ConsentDeps:
     """The handlers' whole world, attached to `app.state.consent_deps`."""
@@ -75,6 +97,7 @@ class ConsentDeps:
     allow_private_targets: bool
     allowed_integrations: frozenset[str] = frozenset({BUSINESS})
     publisher: str = "Persevida SL"
+    verification_gate: _AddressGate = field(default_factory=lambda: _AddressGate())
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +118,7 @@ class _FormState:
 # Each verification spawns a child process and dials a host the caller chose, so the number running at once is
 # capped: an unauthenticated form must not be a cheap way to start processes or probe other servers.
 MAX_CONCURRENT_VERIFICATIONS = 4
+MAX_VERIFICATIONS_PER_ADDRESS_PER_MINUTE = 6
 _verifications_running = 0
 
 
@@ -171,6 +195,9 @@ async def consent_submit(request: Request) -> Response:
     global _verifications_running
     if _verifications_running >= MAX_CONCURRENT_VERIFICATIONS:
         return _rerender(deps, shown, "The server is checking other connections right now. Try again in a minute.")
+    address = client_address(request.scope)
+    if not deps.verification_gate.enter(address):
+        return _rerender(deps, shown, "Too many connection attempts from your address. Try again in a minute.")
     _verifications_running += 1
     try:
         # Bounded by construction: the thread joins the child for at most _VERIFY_TIMEOUT (+ the reap), so a
@@ -181,6 +208,7 @@ async def consent_submit(request: Request) -> Response:
         return _rerender(deps, shown, "The Evolution server could not be verified.")
     finally:
         _verifications_running -= 1
+        deps.verification_gate.leave(address)
     if outcome.status != "ok":
         logger.info("consent: verification %s for host %s", outcome.status, host)
         return _rerender(deps, shown, outcome.detail)
@@ -429,7 +457,6 @@ def _toolset_options(selected: frozenset[str]) -> str:
 
 
 _KNOWN_HOSTS = frozenset({"claude.ai", "claude.com", "chatgpt.com", "localhost", "127.0.0.1", "::1"})
-_KNOWN_SCHEMES = frozenset({"cursor", "vscode", "vscode-insiders", "windsurf", "zed", "claude", "codex"})
 _UNKNOWN_CLIENT_WARNING = (
     "This application is not one of the assistants this server knows."
     " Only continue if you started this connection yourself."
@@ -438,9 +465,10 @@ _NAME_DISPLAY_CHARS = 80
 
 
 def _unknown_client(redirect_uri: str) -> bool:
-    """True when the redirect leads somewhere other than the assistants this server knows: https or http to a host
-    outside the known list, or a custom application scheme outside the known list. Anyone can register a client, so
-    the page says so rather than let a stranger's name pass for a familiar one."""
+    """True when the redirect does not lead to one of the assistants this server knows: https or http to a host
+    outside the known list, or ANY custom application scheme (a scheme such as `cursor://` does not identify an
+    application: whichever program registered it on the user's machine receives the code). Anyone can register a
+    client, so the page says so rather than let a stranger's name pass for a familiar one."""
     try:
         parts = urlsplit(redirect_uri)
         host = parts.hostname
@@ -449,11 +477,13 @@ def _unknown_client(redirect_uri: str) -> bool:
     scheme = parts.scheme.lower()
     if scheme in ("https", "http"):
         return host not in _KNOWN_HOSTS
-    return scheme not in _KNOWN_SCHEMES
+    return True
 
 
 def _display_name(name: str) -> str:
-    """The client's own name, cut to 80 characters with an ellipsis; the caller still escapes it."""
+    """The client's own name for display: format and control characters (bidi overrides, zero-width characters,
+    newlines) removed, then cut to 80 characters with an ellipsis; the caller still escapes it."""
+    name = "".join(ch for ch in name if unicodedata.category(ch) not in ("Cf", "Cc"))
     return name if len(name) <= _NAME_DISPLAY_CHARS else name[:_NAME_DISPLAY_CHARS] + "…"
 
 
@@ -464,7 +494,7 @@ def _form_html(deps: ConsentDeps, shown: _FormState) -> str:
         if _unknown_client(shown.redirect_uri)
         else ""
     )
-    client_name = html.escape(_display_name(shown.client_name))
+    client_name = f"<bdi>{html.escape(_display_name(shown.client_name))}</bdi>"
     policy_options = "".join(
         '<label class="policy-option">'
         f'<input type="radio" name="policy" value="{value}"{" checked" if shown.policy == value else ""}>'

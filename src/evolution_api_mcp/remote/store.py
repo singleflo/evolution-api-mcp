@@ -47,10 +47,12 @@ ACCESS_TTL = timedelta(hours=1)
 REFRESH_TTL = timedelta(days=30)
 CODE_TTL = timedelta(minutes=10)
 PENDING_TTL = timedelta(minutes=10)
+UNUSED_CLIENT_TTL = timedelta(hours=48)
+USED_CLIENT_TTL = timedelta(days=90)
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS oauth_clients (
-    client_id TEXT PRIMARY KEY, client_json TEXT NOT NULL, created_at TEXT NOT NULL);
+    client_id TEXT PRIMARY KEY, client_json TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT);
 CREATE TABLE IF NOT EXISTS pending_authz (
     id TEXT PRIMARY KEY, client_id TEXT NOT NULL, redirect_uri TEXT NOT NULL,
     redirect_uri_explicit INT NOT NULL, scopes TEXT, code_challenge TEXT,
@@ -73,6 +75,14 @@ CREATE TABLE IF NOT EXISTS tenants (
     policy TEXT NOT NULL, toolsets TEXT NOT NULL,
     created_at TEXT NOT NULL, last_used_at TEXT NOT NULL);
 """
+
+# A client no code or token names. A bare pending authorisation is deliberately absent: `/authorize` is
+# unauthenticated, so it must not keep a registration alive.
+_UNREFERENCED = (
+    "NOT EXISTS (SELECT 1 FROM auth_codes WHERE client_id = oauth_clients.client_id)"
+    " AND NOT EXISTS (SELECT 1 FROM access_tokens WHERE client_id = oauth_clients.client_id)"
+    " AND NOT EXISTS (SELECT 1 FROM refresh_tokens WHERE client_id = oauth_clients.client_id)"
+)
 
 
 def hash_token(raw: str) -> str:
@@ -232,12 +242,15 @@ class Store:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._db() as db:
             db.executescript(_SCHEMA)
+            columns = {row[1] for row in db.execute("PRAGMA table_info(oauth_clients)")}
+            if "last_used_at" not in columns:  # a database created before the column existed
+                db.execute("ALTER TABLE oauth_clients ADD COLUMN last_used_at TEXT")
 
     # ---------------------------------------------------------- OAuth clients
     def put_client(self, client: OAuthClientInformationFull) -> None:
         with self._db() as db:
             db.execute(
-                "INSERT OR REPLACE INTO oauth_clients VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO oauth_clients (client_id, client_json, created_at) VALUES (?, ?, ?)",
                 (client.client_id, self._fernet.encrypt(client.model_dump_json().encode()), _iso(_now())),
             )
 
@@ -356,6 +369,11 @@ class Store:
             ),
         )
 
+    @staticmethod
+    def _mark_client_used(db: sqlite3.Connection, client_id: str) -> None:
+        """A completed code exchange or refresh rotation is what keeps a registration alive; `/authorize` is not."""
+        db.execute("UPDATE oauth_clients SET last_used_at = ? WHERE client_id = ?", (_iso(_now()), client_id))
+
     def exchange_code_pair(self, code: str, access: AccessToken, refresh: RefreshToken) -> AuthCode | None:
         """Consume a code and persist both minted tokens in one transaction."""
         with self._db(immediate=True) as db:
@@ -365,6 +383,7 @@ class Store:
                 return None
             db.execute("DELETE FROM auth_codes WHERE code = ?", (hash_token(code),))
             self._put_pair(db, access, refresh)
+            self._mark_client_used(db, row["client_id"])
         return _auth_code(row, code)
 
     def rotate_refresh_pair(self, token_hash: str, access: AccessToken, refresh: RefreshToken) -> RefreshToken | None:
@@ -377,6 +396,7 @@ class Store:
             db.execute("DELETE FROM access_tokens WHERE family_id = ?", (family_id,))
             db.execute("UPDATE refresh_tokens SET revoked = 1 WHERE family_id = ?", (family_id,))
             self._put_pair(db, access, refresh)
+            self._mark_client_used(db, row["client_id"])
         return _refresh(row)
 
     # ------------------------------------------------------------------ tokens
@@ -507,20 +527,54 @@ class Store:
             db.execute("DELETE FROM access_tokens WHERE expires_at <= ?", (now,))
             db.execute("DELETE FROM refresh_tokens WHERE revoked = 1 OR expires_at <= ?", (now,))
 
-    def purge_unused_clients(self, days: int = 30) -> int:
-        """Delete registrations older than `days` that nothing references: no pending authorisation, code, access
-        token or refresh token names the client. Registration is open to anyone, so rows nobody connected through must
-        not live forever. Returns the number removed."""
+    def purge_unused_clients(
+        self, unused_after: timedelta = UNUSED_CLIENT_TTL, idle_after: timedelta = USED_CLIENT_TTL
+    ) -> int:
+        """Delete registrations nothing references (no code, access token or refresh token names the client).
+
+        Registration is open to anyone, so rows nobody connected through must not live forever. A client that never
+        completed a code exchange (`last_used_at` unset) goes `unused_after` its registration; one that did goes
+        `idle_after` its last use. A bare pending authorisation pins nothing: `/authorize` is unauthenticated, so
+        letting it keep a client alive would let a stranger keep their own registrations forever. Returns the number
+        removed."""
+        now = _now()
         with self._db(immediate=True) as db:
             cursor = db.execute(
-                "DELETE FROM oauth_clients WHERE created_at <= :cutoff"
-                " AND NOT EXISTS (SELECT 1 FROM pending_authz WHERE client_id = oauth_clients.client_id)"
-                " AND NOT EXISTS (SELECT 1 FROM auth_codes WHERE client_id = oauth_clients.client_id)"
-                " AND NOT EXISTS (SELECT 1 FROM access_tokens WHERE client_id = oauth_clients.client_id)"
-                " AND NOT EXISTS (SELECT 1 FROM refresh_tokens WHERE client_id = oauth_clients.client_id)",
-                {"cutoff": _iso(_now() - timedelta(days=days))},
+                "DELETE FROM oauth_clients WHERE " + _UNREFERENCED + " AND ("
+                " (last_used_at IS NULL AND created_at <= :unused_cutoff)"
+                " OR COALESCE(last_used_at, created_at) <= :idle_cutoff)",
+                {"unused_cutoff": _iso(now - unused_after), "idle_cutoff": _iso(now - idle_after)},
             )
             return cursor.rowcount
+
+    def make_client_room(self, max_clients: int) -> bool:
+        """True when one more registration fits under `max_clients`, evicting the oldest never-used clients to make
+        room. False only when the table is full of clients that completed an exchange or hold live tokens."""
+        with self._db(immediate=True) as db:
+            count = db.execute("SELECT COUNT(*) FROM oauth_clients").fetchone()[0]
+            if count < max_clients:
+                return True
+            evicted = db.execute(
+                "DELETE FROM oauth_clients WHERE client_id IN ("
+                " SELECT client_id FROM oauth_clients WHERE last_used_at IS NULL AND "
+                + _UNREFERENCED
+                + " ORDER BY created_at LIMIT :excess)",
+                {"excess": count - max_clients + 1},
+            ).rowcount
+            return count - evicted < max_clients
+
+    def pending_room(self, max_pending: int) -> bool:
+        """True when one more pending authorisation fits under `max_pending`; expired rows are dropped first."""
+        with self._db(immediate=True) as db:
+            if db.execute("SELECT COUNT(*) FROM pending_authz").fetchone()[0] < max_pending:
+                return True
+            db.execute("DELETE FROM pending_authz WHERE expires_at <= ?", (_iso(_now()),))
+            return db.execute("SELECT COUNT(*) FROM pending_authz").fetchone()[0] < max_pending
+
+    def purge_expired_pending(self) -> int:
+        """Delete expired pending authorisations; returns the number removed."""
+        with self._db() as db:
+            return db.execute("DELETE FROM pending_authz WHERE expires_at <= ?", (_iso(_now()),)).rowcount
 
     def purge_idle_tenants(self, days: int = 90) -> list[str]:
         """Forget tenants unused for `days` that hold no live token — the

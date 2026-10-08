@@ -486,8 +486,9 @@ SWEEP_SECONDS = 3600
 
 
 def _sweep_once(store: Store) -> None:
-    """The retention sweeps in one place: expired OAuth rows, client registrations nobody used for 30 days, tenants
-    idle past the window (their disk artifacts go with them), expired file links."""
+    """The retention sweeps in one place: expired OAuth rows, client registrations nobody connected through (2 days)
+    or used and then idle (90 days), tenants idle past the window (their disk artifacts go with them), expired file
+    links."""
     store.purge_expired()
     store.purge_unused_clients()
     for subject in store.purge_idle_tenants():

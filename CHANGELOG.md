@@ -9,13 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - **Hardened the public client registration endpoint** (`POST /register`), which stays open as the MCP authorization
-  specification requires. It now refuses `javascript:`, `data:`, `file:`, `vbscript:`, `about:`, `blob:`, `ftp:`,
-  `ws:`, `wss:` and non-loopback `http:` redirect URIs and redirect URIs with a fragment; accepts 1 to 5 redirect URIs
-  of at most 2048 characters, a client name of at most 200 characters and a request of at most 16 KiB; allows 10
-  registrations per minute per client address and 200 per hour overall (429 with `Retry-After`); and stops at 5,000
-  stored registrations (503). Registrations unused for 30 days are deleted by the hourly sweep.
-- The consent page warns when a client is not one of the assistants the server knows (by redirect host or application
-  scheme) and shortens client names to 80 characters.
+  specification requires. Redirect URIs are validated in the form the server stores them (a `\` can no longer smuggle
+  a non-loopback host into an `http:` URI) against a scheme allowlist: `https`, `http` to loopback, reverse-DNS
+  application schemes and `cursor`, `vscode`, `vscode-insiders`, `windsurf`, `zed`, `claude`, `codex`; anything else
+  (`itms-services:`, `ms-msdt:`, `search-ms:`, `mailto:`, `javascript:`, ...) is refused, as are fragments. It accepts
+  1 to 5 redirect URIs of at most 2048 characters, a client name of at most 200 characters and a request of at most
+  16 KiB; allows 10 registrations per minute and 30 per hour per client address (429 with `Retry-After`); counts
+  only stored registrations against a server-wide valve of 1,000 per hour, so refused requests cannot lock other
+  clients out; and holds at most 5,000 registrations, evicting the oldest never-used one before answering 503.
+  Registrations nobody completed a connection through are deleted after 2 days and used ones after 90 days without
+  use (new `last_used_at` column, added to existing databases on startup). Refusals carry the CORS header the SDK's
+  handler adds.
+- **`GET /authorize` is rate limited** (60 per minute per address, 30 per minute per `client_id`) and the pending
+  authorisation table is capped at 20,000 rows, with expired rows cleared every minute.
+- **The consent page** warns for every custom-scheme redirect (a scheme does not identify an application), strips
+  bidirectional and invisible characters from client names and isolates them with `<bdi>`; the connection check allows
+  1 concurrent and 6 per minute per client address.
 
 ## [1.0.0] - 2026-10-07
 
